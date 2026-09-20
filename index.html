@@ -631,7 +631,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
         <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">Jetpack Lifecycle</span></div>
         <h1>Jetpack Lifecycle</h1>
         <div class="note-meta">
-          <span>수정일 2026-09-14</span>
+          <span>수정일 2026-09-20</span>
           <span class="read-time"></span>
           <span><span class="tag">android</span><span class="tag">jetpack</span><span class="tag">lifecycle</span><span class="tag">lifecycleowner</span><span class="tag">lifecycleobserver</span><span class="tag">lifecycleregistry</span></span>
         </div>
@@ -733,6 +733,7 @@ class CameraObserver : MyObserver {
         <h2>7. 관련 문서</h2>
         <ul>
           <li><a class="wikilink" href="#data-binding">Data Binding</a> — <code>LiveData</code>로 양방향 바인딩을 자동 갱신하려면 <code>binding.lifecycleOwner</code> 지정이 필수인데, 그게 바로 이 <code>LifecycleOwner</code></li>
+          <li><a class="wikilink" href="#live-data">LiveData</a> — 값을 전달할지 판단할 때 내부적으로 이 State/Event 체계를 확인</li>
         </ul>
       </div>
     </section>
@@ -1137,7 +1138,7 @@ abstract class MixedModule {
         <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">Data Binding</span></div>
         <h1>Data Binding</h1>
         <div class="note-meta">
-          <span>수정일 2026-09-12</span>
+          <span>수정일 2026-09-20</span>
           <span class="read-time"></span>
           <span><span class="tag">android</span><span class="tag">databinding</span><span class="tag">viewbinding</span><span class="tag">bindingadapter</span><span class="tag">xml</span><span class="tag">jetpack</span></span>
         </div>
@@ -1223,6 +1224,122 @@ binding.user = User("철수")</code></pre>
         <ul>
           <li><a class="wikilink" href="#annotation-processor">Annotation Processor</a></li>
           <li><a class="wikilink" href="#jetpack-lifecycle">Jetpack Lifecycle</a> — <code>binding.lifecycleOwner</code>에 넘기는 <code>LifecycleOwner</code>가 바로 이 개념</li>
+          <li><a class="wikilink" href="#live-data">LiveData</a> — 데이터 → 뷰 방향 자동 갱신을 성립시키는 옵저버블 타입</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="live-data" class="note-section">
+      <div class="note-header">
+        <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">LiveData</span></div>
+        <h1>LiveData</h1>
+        <div class="note-meta">
+          <span>수정일 2026-09-20</span>
+          <span class="read-time"></span>
+          <span><span class="tag">android</span><span class="tag">livedata</span><span class="tag">mutablelivedata</span><span class="tag">lifecycle</span><span class="tag">observer</span><span class="tag">postvalue</span></span>
+        </div>
+      </div>
+      <div class="note-body">
+        <h2>1. 정의</h2>
+        <ul>
+          <li>옵저버블 데이터 홀더 — 값이 바뀌면 관찰 중인 컴포넌트에 자동으로 알려주는 Jetpack Architecture Components 클래스</li>
+          <li>일반 옵저버 패턴과 다른 핵심 차이는 <strong>Lifecycle 인식</strong> — <a class="wikilink" href="#jetpack-lifecycle">Jetpack Lifecycle</a>의 <code>LifecycleOwner</code>를 함께 등록하면 그 State가 <code>STARTED</code> 이상일 때만 업데이트를 전달</li>
+        </ul>
+
+        <h2>2. 핵심 개념</h2>
+        <ul>
+          <li><strong>AS-IS (일반 옵저버/콜백)</strong>: Activity가 <code>onStop</code>/<code>onDestroy</code>된 후에도 콜백이 계속 와서 메모리 누수·<code>NullPointerException</code>이 흔했고, 구독 해제도 수동으로 챙겨야 했음</li>
+          <li><strong>TO-BE (LiveData)</strong>: <code>Lifecycle</code>이 <code>DESTROYED</code>가 되면 옵저버를 자동 제거 — 수동 해제 코드 불필요</li>
+          <li><strong><code>MutableLiveData</code> vs <code>LiveData</code></strong>: 내부에서 값을 바꿀 때는 <code>MutableLiveData</code>, 외부(UI)에는 읽기 전용 <code>LiveData</code>로 캡슐화해서 노출하는 게 관례</li>
+          <li><strong>최신값 캐싱</strong>: 옵저버 등록 시점에 이미 State가 <code>STARTED</code> 이상이면, 등록하자마자 가장 최근 값을 즉시 한 번 전달 — 구독이 늦어도 값을 놓치지 않음</li>
+        </ul>
+        <pre><code>class MyViewModel : ViewModel() {
+    private val _count = MutableLiveData(0)
+    val count: LiveData&lt;Int&gt; = _count
+
+    fun increment() {
+        _count.value = _count.value!! + 1   // 메인 스레드
+    }
+}
+
+myViewModel.count.observe(this) { newValue -&gt; textView.text = newValue.toString() }</code></pre>
+
+        <h2>3. postValue 내부 동작</h2>
+        <p><code>postValue</code>는 백그라운드 스레드에서 값을 안전하게 반영하기 위한 메서드, 내부적으로 락으로 감싼 대기값(<code>mPendingData</code>)과 메인 스레드 Runnable로 구현됨 (AOSP <code>LiveData.java</code> 기준):</p>
+        <pre><code>volatile Object mData = NOT_SET;
+volatile Object mPendingData = NOT_SET;
+
+protected void postValue(T value) {
+    boolean postTask;
+    synchronized (mDataLock) {
+        postTask = mPendingData == NOT_SET;
+        mPendingData = value;
+    }
+    if (!postTask) return;   // 이미 대기 중인 post가 있으면 값만 덮어쓰고 끝
+    ArchTaskExecutor.getInstance().postToMainThread(mPostValueRunnable);
+}
+
+private final Runnable mPostValueRunnable = () -&gt; {
+    Object newValue;
+    synchronized (mDataLock) {
+        newValue = mPendingData;
+        mPendingData = NOT_SET;
+    }
+    setValue((T) newValue);   // 결국 메인 스레드에서 setValue 호출
+};
+
+protected void setValue(T value) {
+    assertMainThread("setValue");   // 메인 스레드 아니면 예외
+    mVersion++;
+    mData = value;
+    dispatchingValue(null);
+}</code></pre>
+        <ol>
+          <li><code>postValue(x)</code> → <code>mDataLock</code>으로 감싸서 <code>mPendingData</code>에 값만 기록</li>
+          <li>이미 대기 중인 Runnable이 없을 때만(<code>mPendingData == NOT_SET</code>이었을 때만) 메인 스레드로 Runnable을 post</li>
+          <li>메인 스레드에서 Runnable 실행 → <code>mPendingData</code>를 꺼내 <code>setValue()</code> 호출 → 실제 반영 + 옵저버 통지</li>
+        </ol>
+        <p>핵심은 2번 — "여러 번 <code>postValue</code> 호출 = 여러 번 반영"이 아님. Runnable이 아직 메인 스레드 큐에서 대기 중이면 새 Runnable을 또 post하지 않고 <code>mPendingData</code>만 최신값으로 덮어씀 → <strong>중간 값들은 유실되고 마지막 값만 반영</strong>됨.</p>
+
+        <h2>4. postValue 오남용으로 생기는 문제</h2>
+
+        <h3>4-1 백그라운드 스레드에서 setValue(.value =) 호출 → IllegalStateException</h3>
+        <pre><code>Thread { _count.value = 10 }.start()
+// IllegalStateException: Cannot invoke setValue on a background thread</code></pre>
+        <p><code>setValue</code>는 <code>assertMainThread()</code>로 막혀 있지만 <code>postValue</code>는 이 체크가 없음 — 차이를 모르고 백그라운드에서 <code>.value =</code>를 그대로 쓰면 터짐.</p>
+
+        <h3>4-2 연속 postValue 호출 시 중간 값 유실 (가장 흔한 버그, 예외는 아님)</h3>
+        <pre><code>viewModelScope.launch(Dispatchers.IO) {
+    for (i in 1..100) {
+        _progress.postValue(i)   // 메인 스레드가 바쁘면 1~99는 씹히고 100만 반영될 수 있음
+    }
+}</code></pre>
+        <p>진행률 표시줄처럼 모든 중간값이 UI에 다 찍혀야 하는 케이스에서 특히 문제 — 구조상 보장 안 됨.</p>
+
+        <h3>4-3 postValue 직후 같은 스레드에서 value 즉시 읽기 → 옛날 값</h3>
+        <pre><code>_count.postValue(5)
+val current = _count.value   // 메인 스레드 Runnable이 아직 안 돌았으면 5가 아님</code></pre>
+        <p>비동기 반영을 동기처럼 착각해서 바로 다음 줄에서 읽으면 race condition 버그로 이어짐.</p>
+
+        <h3>4-4 초기값 없이 생성 후 value!! → NullPointerException</h3>
+        <pre><code>private val _count = MutableLiveData&lt;Int&gt;()   // 초기값 없음 → value는 null
+fun increment() { _count.value = _count.value!! + 1 }   // 첫 호출에서 NPE</code></pre>
+        <p><code>MutableLiveData(0)</code>처럼 초깃값을 명시하거나 널 처리가 필요.</p>
+
+        <h3>4-5 여러 스레드에서 동시에 postValue 남발 → 반영 순서 보장 없음</h3>
+        <p><code>mPendingData</code>가 마지막에 쓴 스레드의 값으로 덮어써지므로, 여러 백그라운드 스레드가 경쟁적으로 <code>postValue</code>를 부르면 최종 반영되는 값이 호출 순서와 무관하게 타이밍에 좌우됨.</p>
+
+        <h2>5. 실무 고려사항</h2>
+        <ul>
+          <li><strong>StateFlow로 옮겨가는 추세</strong>: Compose가 주류가 되면서 Coroutine 기반 <code>StateFlow</code>/<code>SharedFlow</code>가 대체재로 많이 쓰임 — LiveData는 View 시스템(XML) 중심 프로젝트에서 여전히 흔함</li>
+          <li><strong><code>ViewModel</code> + <code>SavedStateHandle</code>과 조합</strong>: 화면 회전 등으로 재생성돼도 <code>ViewModel</code>이 살아있으므로 LiveData 값도 유지됨</li>
+          <li><strong>단일 이벤트 문제</strong>: "현재 상태"를 표현하기엔 좋지만, 토스트 메시지처럼 "한 번만 소비돼야 하는 이벤트"엔 부적합 — 재구독 시 과거 이벤트가 다시 발생함. <code>SingleLiveEvent</code>/<code>Channel</code> 같은 우회가 필요</li>
+        </ul>
+
+        <h2>6. 관련 문서</h2>
+        <ul>
+          <li><a class="wikilink" href="#jetpack-lifecycle">Jetpack Lifecycle</a> — LiveData가 옵저버에게 값을 전달할지 판단할 때 내부적으로 확인하는 State/Event 체계가 여기서 정의됨</li>
+          <li><a class="wikilink" href="#data-binding">Data Binding</a> — LiveData로 양방향 바인딩을 자동 갱신하려면 <code>binding.lifecycleOwner</code> 지정이 필수</li>
         </ul>
       </div>
     </section>
@@ -1753,6 +1870,7 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     { slug: "annotation-processor", title: "Annotation Processor", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","kotlin","java","kapt","ksp","build","codegen"], updated: "2026-09-12" },
     { slug: "data-binding", title: "Data Binding", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","databinding","viewbinding","bindingadapter","xml","jetpack"], updated: "2026-09-12" },
     { slug: "hilt", title: "Hilt", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","di","dependency-injection","hilt","dagger","kotlin"], updated: "2026-09-19" },
+    { slug: "live-data", title: "LiveData", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","livedata","mutablelivedata","lifecycle","observer","postvalue"], updated: "2026-09-20" },
     { slug: "anr", title: "ANR (Application Not Responding)", group: "dev", category: "android", subcategory: "code-analysis-test", tags: ["android","anr","performance","debugging","main-thread"], updated: "2026-09-12" },
     { slug: "datastore", title: "DataStore", group: "dev", category: "android", subcategory: "local-storage", tags: ["android","datastore","sharedpreferences","coroutines","flow","protobuf"], updated: "2026-09-12" },
     { slug: "file-uri-vs-content-uri", title: "File URI vs Content URI", group: "dev", category: "android", subcategory: "app-components", tags: ["android","uri","fileprovider","contentprovider","intent","scoped-storage"], updated: "2026-09-13" },
