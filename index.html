@@ -65,7 +65,11 @@
     padding: 10px 14px;
     background: var(--bg); border-bottom: 1px solid var(--border);
   }
-  header .title { font-weight: 600; font-size: 14.5px; white-space: nowrap; color: var(--text-dim); }
+  header .title {
+    font-weight: 600; font-size: 14.5px; white-space: nowrap; color: var(--text-dim);
+    text-decoration: none; cursor: pointer; transition: color .15s ease;
+  }
+  header .title:hover { color: var(--accent); }
   #hamburger {
     display: none;
     width: 34px; height: 34px; flex: none;
@@ -258,6 +262,49 @@
     font-variant-numeric: tabular-nums;
   }
 
+  /* ---------- 홈: 카테고리 개요 / 태그 클라우드 / 복습 추천 ---------- */
+  .home-block { margin-bottom: 32px; }
+  .home-block-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    flex-wrap: wrap; gap: 8px 10px; margin-bottom: 12px;
+  }
+  .home-block-head h2 { margin: 0; }
+  .home-block-hint { font-size: 12px; color: var(--text-dim); }
+
+  .cat-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    gap: 10px;
+  }
+  .cat-card {
+    border: 1px solid var(--border); border-radius: 8px; padding: 13px 14px;
+    background: var(--bg-alt); cursor: pointer; text-align: left;
+    font-family: inherit; color: inherit;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .cat-card:hover { border-color: var(--accent); background: var(--accent-dim); }
+  .cat-card .cat-group-label {
+    font-size: 10.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em;
+  }
+  .cat-card .cat-name { font-size: 14.5px; font-weight: 700; margin: 4px 0 3px; }
+  .cat-card .cat-num { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+
+  .tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tag-pill {
+    border: 1px solid var(--border); background: var(--bg-alt); color: var(--text-dim);
+    border-radius: 999px; padding: 5px 13px; font-size: 12.5px; line-height: 1.4;
+    font-family: inherit; cursor: pointer;
+    transition: border-color .15s ease, color .15s ease, background .15s ease;
+  }
+  .tag-pill:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+  .tag-pill .tag-count { opacity: .6; margin-left: 5px; font-variant-numeric: tabular-nums; }
+
+  .review-btn {
+    border: 1px solid var(--border); background: var(--bg-alt); color: var(--text);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; font-family: inherit;
+    cursor: pointer; white-space: nowrap; transition: border-color .15s ease, color .15s ease;
+  }
+  .review-btn:hover { border-color: var(--accent); color: var(--accent); }
+
   /* ---------- 카테고리 랜딩 이미지 (예: 안드로이드 로드맵) ---------- */
   .roadmap-wrap { overflow-x: auto; }
   .roadmap-img {
@@ -314,7 +361,7 @@
 
 <header>
   <button id="hamburger" aria-label="메뉴">&#9776;</button>
-  <span class="title">Dev Wiki</span>
+  <a href="#home" class="title">Dev Wiki</a>
   <input id="search" type="text" placeholder="제목/태그 검색..." />
 </header>
 
@@ -328,8 +375,30 @@
       <h1>Dev Wiki</h1>
       <div class="sub">개인 개발 지식 위키 — 왼쪽에서 노트를 선택하거나 검색하세요.</div>
       <div class="stat-row" id="stat-row"></div>
-      <h2>최근 수정된 노트</h2>
-      <ul class="recent-list" id="recent-list"></ul>
+
+      <div class="home-block">
+        <div class="home-block-head"><h2>카테고리</h2></div>
+        <div class="cat-grid" id="cat-grid"></div>
+      </div>
+
+      <div class="home-block">
+        <div class="home-block-head"><h2>태그</h2></div>
+        <div class="tag-cloud" id="tag-cloud"></div>
+      </div>
+
+      <div class="home-block">
+        <div class="home-block-head">
+          <h2>복습하면 좋은 노트</h2>
+          <button class="review-btn" id="random-note-btn" type="button">무작위로 하나 보기</button>
+        </div>
+        <div class="home-block-hint" style="margin: -6px 0 10px;">가장 오래 전에 정리한 노트예요</div>
+        <ul class="recent-list" id="stale-list"></ul>
+      </div>
+
+      <div class="home-block">
+        <div class="home-block-head"><h2>최근 수정된 노트</h2></div>
+        <ul class="recent-list" id="recent-list"></ul>
+      </div>
     </section>
 
     <section id="cat-android" class="note-section">
@@ -2124,16 +2193,78 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     });
   }
 
+  function goToCategory(g, c) {
+    var key = g + ":" + c;
+    if (CATEGORY_LANDING[key]) { location.hash = CATEGORY_LANDING[key]; return; }
+    var notesInCat = NOTES.filter(function (n) { return n.group === g && n.category === c; })
+      .sort(function (a, b) { return a.updated < b.updated ? 1 : -1; });
+    if (notesInCat[0]) location.hash = notesInCat[0].slug;
+  }
+
+  function filterByTag(tag) {
+    searchInput.value = tag;
+    buildSidebar(tag);
+    searchInput.focus();
+    if (window.innerWidth <= 768) {
+      sidebar.classList.add("open");
+      overlay.classList.add("open");
+    }
+  }
+
   function renderHome() {
     var statRow = document.getElementById("stat-row");
     var groupCount = GROUP_ORDER.length;
-    var catCount = Object.keys(CATEGORY_LABEL).length;
+    var catKeys = {};
+    NOTES.forEach(function (n) { catKeys[n.group + ":" + n.category] = true; });
+    var catCount = Object.keys(catKeys).length;
     var noteCount = NOTES.length;
     statRow.innerHTML =
       '<div class="stat-card"><div class="num">' + groupCount + '</div><div class="label">그룹</div></div>' +
       '<div class="stat-card"><div class="num">' + catCount + '</div><div class="label">카테고리</div></div>' +
       '<div class="stat-card"><div class="num">' + noteCount + '</div><div class="label">노트</div></div>';
 
+    // ---- 카테고리 개요 카드 ----
+    var catCounts = {}, catOrder = [];
+    NOTES.forEach(function (n) {
+      var key = n.group + ":" + n.category;
+      if (!catCounts[key]) { catCounts[key] = 0; catOrder.push(key); }
+      catCounts[key]++;
+    });
+    catOrder.sort(function (ka, kb) {
+      var ga = ka.split(":")[0], gb = kb.split(":")[0];
+      if (ga !== gb) return GROUP_ORDER.indexOf(ga) - GROUP_ORDER.indexOf(gb);
+      var ca = ka.split(":")[1], cb = kb.split(":")[1];
+      var order = CATEGORY_ORDER[ga] || [];
+      var ia = order.indexOf(ca); if (ia === -1) ia = 999;
+      var ib = order.indexOf(cb); if (ib === -1) ib = 999;
+      return ia - ib;
+    });
+    var catGrid = document.getElementById("cat-grid");
+    catGrid.innerHTML = catOrder.map(function (key) {
+      var parts = key.split(":"), g = parts[0], c = parts[1];
+      var label = CATEGORY_LABEL[c] || c;
+      var groupLabel = GROUP_LABEL[g] || g;
+      return '<button type="button" class="cat-card" data-group="' + g + '" data-cat="' + c + '">' +
+        '<div class="cat-group-label">' + groupLabel + '</div>' +
+        '<div class="cat-name">' + label + '</div>' +
+        '<div class="cat-num">' + catCounts[key] + '개 노트</div></button>';
+    }).join("");
+
+    // ---- 태그 클라우드 ----
+    var tagCounts = {};
+    NOTES.forEach(function (n) {
+      (n.tags || []).forEach(function (t) { tagCounts[t] = (tagCounts[t] || 0) + 1; });
+    });
+    var tagList = Object.keys(tagCounts).sort(function (a, b) {
+      return tagCounts[b] - tagCounts[a] || a.localeCompare(b);
+    });
+    var tagCloud = document.getElementById("tag-cloud");
+    tagCloud.innerHTML = tagList.map(function (t) {
+      return '<button type="button" class="tag-pill" data-tag="' + t + '">' + escHtml(t) +
+        '<span class="tag-count">' + tagCounts[t] + '</span></button>';
+    }).join("");
+
+    // ---- 최근 수정된 노트 ----
     var recentList = document.getElementById("recent-list");
     recentList.innerHTML = "";
     NOTES.slice().sort(function (a, b) { return a.updated < b.updated ? 1 : -1; })
@@ -2141,6 +2272,17 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
         var li = document.createElement("li");
         li.innerHTML = '<a href="#' + n.slug + '">' + n.title + '</a><span class="date">' + n.updated + '</span>';
         recentList.appendChild(li);
+      });
+
+    // ---- 복습하면 좋은 노트 (가장 오래 전에 갱신된 순) ----
+    var staleList = document.getElementById("stale-list");
+    staleList.innerHTML = "";
+    NOTES.slice().sort(function (a, b) { return a.updated < b.updated ? -1 : 1; })
+      .slice(0, 5)
+      .forEach(function (n) {
+        var li = document.createElement("li");
+        li.innerHTML = '<a href="#' + n.slug + '">' + n.title + '</a><span class="date">' + n.updated + '</span>';
+        staleList.appendChild(li);
       });
   }
 
@@ -2175,6 +2317,25 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
 
   searchInput.addEventListener("input", function () {
     buildSidebar(searchInput.value);
+  });
+
+  document.getElementById("cat-grid").addEventListener("click", function (e) {
+    var card = e.target.closest(".cat-card");
+    if (!card) return;
+    goToCategory(card.dataset.group, card.dataset.cat);
+  });
+
+  document.getElementById("tag-cloud").addEventListener("click", function (e) {
+    var pill = e.target.closest(".tag-pill");
+    if (!pill) return;
+    filterByTag(pill.dataset.tag);
+  });
+
+  document.getElementById("random-note-btn").addEventListener("click", function () {
+    var current = location.hash.replace("#", "");
+    var pool = NOTES.length > 1 ? NOTES.filter(function (n) { return n.slug !== current; }) : NOTES;
+    var pick = pool[Math.floor(Math.random() * pool.length)];
+    if (pick) location.hash = pick.slug;
   });
 
   window.addEventListener("hashchange", showSection);
