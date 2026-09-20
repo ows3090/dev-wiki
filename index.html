@@ -288,16 +288,6 @@
   .cat-card .cat-name { font-size: 14.5px; font-weight: 700; margin: 4px 0 3px; }
   .cat-card .cat-num { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 
-  .tag-cloud { display: flex; flex-wrap: wrap; gap: 8px; }
-  .tag-pill {
-    border: 1px solid var(--border); background: var(--bg-alt); color: var(--text-dim);
-    border-radius: 999px; padding: 5px 13px; font-size: 12.5px; line-height: 1.4;
-    font-family: inherit; cursor: pointer;
-    transition: border-color .15s ease, color .15s ease, background .15s ease;
-  }
-  .tag-pill:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
-  .tag-pill .tag-count { opacity: .6; margin-left: 5px; font-variant-numeric: tabular-nums; }
-
   .review-btn {
     border: 1px solid var(--border); background: var(--bg-alt); color: var(--text);
     border-radius: 6px; padding: 6px 12px; font-size: 12px; font-family: inherit;
@@ -379,11 +369,6 @@
       <div class="home-block">
         <div class="home-block-head"><h2>카테고리</h2></div>
         <div class="cat-grid" id="cat-grid"></div>
-      </div>
-
-      <div class="home-block">
-        <div class="home-block-head"><h2>태그</h2></div>
-        <div class="tag-cloud" id="tag-cloud"></div>
       </div>
 
       <div class="home-block">
@@ -2201,16 +2186,6 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     if (notesInCat[0]) location.hash = notesInCat[0].slug;
   }
 
-  function filterByTag(tag) {
-    searchInput.value = tag;
-    buildSidebar(tag);
-    searchInput.focus();
-    if (window.innerWidth <= 768) {
-      sidebar.classList.add("open");
-      overlay.classList.add("open");
-    }
-  }
-
   function renderHome() {
     var statRow = document.getElementById("stat-row");
     var groupCount = GROUP_ORDER.length;
@@ -2248,20 +2223,6 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
         '<div class="cat-group-label">' + groupLabel + '</div>' +
         '<div class="cat-name">' + label + '</div>' +
         '<div class="cat-num">' + catCounts[key] + '개 노트</div></button>';
-    }).join("");
-
-    // ---- 태그 클라우드 ----
-    var tagCounts = {};
-    NOTES.forEach(function (n) {
-      (n.tags || []).forEach(function (t) { tagCounts[t] = (tagCounts[t] || 0) + 1; });
-    });
-    var tagList = Object.keys(tagCounts).sort(function (a, b) {
-      return tagCounts[b] - tagCounts[a] || a.localeCompare(b);
-    });
-    var tagCloud = document.getElementById("tag-cloud");
-    tagCloud.innerHTML = tagList.map(function (t) {
-      return '<button type="button" class="tag-pill" data-tag="' + t + '">' + escHtml(t) +
-        '<span class="tag-count">' + tagCounts[t] + '</span></button>';
     }).join("");
 
     // ---- 최근 수정된 노트 ----
@@ -2323,12 +2284,6 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     var card = e.target.closest(".cat-card");
     if (!card) return;
     goToCategory(card.dataset.group, card.dataset.cat);
-  });
-
-  document.getElementById("tag-cloud").addEventListener("click", function (e) {
-    var pill = e.target.closest(".tag-pill");
-    if (!pill) return;
-    filterByTag(pill.dataset.tag);
   });
 
   document.getElementById("random-note-btn").addEventListener("click", function () {
