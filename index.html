@@ -71,7 +71,7 @@
   }
   header .title:hover { color: var(--accent); }
   #hamburger {
-    display: none;
+    display: block;
     width: 34px; height: 34px; flex: none;
     border: 1px solid var(--border); background: var(--bg-alt);
     border-radius: 6px; color: var(--text); font-size: 15px; cursor: pointer;
@@ -94,7 +94,7 @@
     border-right: 1px solid var(--border);
     background: var(--bg-alt);
     padding: 8px 6px;
-    overflow-y: auto;
+    overflow-y: auto; overflow-x: hidden;
     max-height: calc(100vh - 51px);
     position: sticky; top: 51px;
     user-select: none;
@@ -112,17 +112,22 @@
   .tree-row.cat-row.landing-active { background: var(--accent-dim); color: var(--accent); }
   .tree-row.subcat-row { padding-left: 38px; color: var(--text-dim); font-weight: 500; font-size: 13px; }
   .chevron {
-    display: inline-block; width: 12px; font-size: 10px; opacity: .55;
+    display: inline-block; width: 12px; flex: none; font-size: 10px; opacity: .55;
     transition: transform .15s ease;
   }
   .tree-row.expanded .chevron { transform: rotate(90deg); }
-  .tree-count { margin-left: auto; font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  /* 라벨만 줄어들며 …로 잘리고, 개수는 항상 오른쪽 끝에 붙는다 */
+  .tree-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .tree-count {
+    flex: none; margin-left: auto; padding-left: 4px;
+    font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums;
+  }
 
   .note-link-item {
     display: block; padding: 8px 8px 8px 44px; line-height: 1.5;
     font-size: 13.5px; color: var(--text);
     text-decoration: none; cursor: pointer; border-radius: 5px;
-    overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     margin-bottom: 2px;
   }
   .note-link-item:hover { background: var(--hover); }
@@ -304,6 +309,11 @@
 
   #sidebar-overlay { display: none; }
 
+  /* 넓은 화면에서 햄버거로 사이드바를 완전히 접은 상태 (모바일은 아래 드로어 방식) */
+  body.sidebar-collapsed #sidebar,
+  body.sidebar-collapsed #sidebar-resizer { display: none; }
+  #hamburger[aria-expanded="false"] { color: var(--text-dim); }
+
   /* ---------- 사이드바/아웃라인 폭 드래그 조절 ---------- */
   .resizer {
     flex: none; width: 1px; background: var(--border);
@@ -322,8 +332,9 @@
   }
 
   @media (max-width: 768px) {
-    #hamburger { display: block; }
     .layout { position: relative; }
+    /* 모바일은 접기 대신 오버레이 드로어 — 넓은 화면에서 접어둔 상태를 무시한다 */
+    body.sidebar-collapsed #sidebar { display: block; }
     #sidebar {
       position: fixed; top: 51px; left: 0; bottom: 0;
       width: 78vw; max-width: 300px;
@@ -2655,7 +2666,7 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
       var groupRow = document.createElement("div");
       groupRow.className = "tree-row group-row" + (groupExpanded ? " expanded" : "");
       groupRow.dataset.key = groupKey;
-      groupRow.innerHTML = '<span class="chevron">&#9656;</span><span>' + (GROUP_LABEL[g] || g) + "</span>";
+      groupRow.innerHTML = '<span class="chevron">&#9656;</span><span class="tree-label">' + (GROUP_LABEL[g] || g) + "</span>";
       sidebar.appendChild(groupRow);
 
       var groupChildren = document.createElement("div");
@@ -2673,7 +2684,7 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
         catRow.dataset.key = catKey;
         if (landingSlug) catRow.dataset.landing = landingSlug;
         catRow.innerHTML =
-          '<span class="chevron">&#9656;</span><span>' + (CATEGORY_LABEL[c] || c) +
+          '<span class="chevron">&#9656;</span><span class="tree-label">' + (CATEGORY_LABEL[c] || c) +
           '</span><span class="tree-count">' + row.notesInCat.length + "</span>";
         groupChildren.appendChild(catRow);
 
@@ -2690,7 +2701,7 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
             subRow.className = "tree-row subcat-row" + (subExpanded ? " expanded" : "");
             subRow.dataset.key = subKey;
             subRow.innerHTML =
-              '<span class="chevron">&#9656;</span><span>' + (SUBCATEGORY_LABEL[sub.key] || sub.key) +
+              '<span class="chevron">&#9656;</span><span class="tree-label">' + (SUBCATEGORY_LABEL[sub.key] || sub.key) +
               '</span><span class="tree-count">' + sub.notesInSub.length + "</span>";
             catChildren.appendChild(subRow);
 
@@ -2845,9 +2856,35 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     overlay.classList.remove("open");
   }
 
+  // 좁은 화면: 오버레이 드로어 열고 닫기 / 넓은 화면: 사이드바 자체를 접었다 펴기.
+  // 넓은 화면에서도 본문을 넓게 보고 싶을 때가 있어서 접기를 남겨둔다 (상태는 localStorage에 기억).
+  var SIDEBAR_COLLAPSED_KEY = "wiki-sidebar-collapsed";
+
+  function isNarrow() {
+    return window.matchMedia("(max-width: 768px)").matches;
+  }
+
+  function setCollapsed(collapsed, persist) {
+    document.body.classList.toggle("sidebar-collapsed", collapsed);
+    hamburger.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    hamburger.title = collapsed ? "사이드바 펼치기" : "사이드바 접기";
+    if (persist) {
+      try { localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0"); } catch (e) {}
+    }
+  }
+
+  try {
+    setCollapsed(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1", false);
+  } catch (e) { setCollapsed(false, false); }
+
   hamburger.addEventListener("click", function () {
-    sidebar.classList.toggle("open");
-    overlay.classList.toggle("open");
+    if (isNarrow()) {
+      sidebar.classList.toggle("open");
+      overlay.classList.toggle("open");
+      return;
+    }
+    closeSidebarMobile();
+    setCollapsed(!document.body.classList.contains("sidebar-collapsed"), true);
   });
   overlay.addEventListener("click", closeSidebarMobile);
 
