@@ -602,6 +602,7 @@
           <li><a class="wikilink" href="#intent">Intent</a> — Task에 새 Activity가 쌓이는 트리거가 되는 메시지 객체</li>
           <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 이 Activity 백스택 안에서 목적지 단위 백스택을 한 겹 더 쌓아 관리하는 라이브러리</li>
           <li><a class="wikilink" href="#activity-lifecycle">Activity Lifecycle</a> — 이 스택에 쌓인 각 Activity가 개별적으로 거치는 상태 전이와 콜백</li>
+          <li><a class="wikilink" href="#binder">Binder</a> — BackStack을 들고 있는 <code>system_server</code>와 앱 프로세스 사이의 모든 통신이 지나가는 IPC 계층</li>
         </ul>
       </div>
     </section>
@@ -693,7 +694,9 @@ override fun onCreate(savedInstanceState: Bundle?) {
           <li><a class="wikilink" href="#task">Task</a></li>
           <li><a class="wikilink" href="#intent">Intent</a> — extras에 Bundle 구조를 그대로 실어 컴포넌트 간 데이터를 전달</li>
           <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 라우트 인자와 <code>SavedStateHandle</code>이 이 구조로 저장/복원됨</li>
-          <li><a class="wikilink" href="#activity-lifecycle">Activity Lifecycle</a> — 이 Bundle이 저장/복원되는 시점(<code>onSaveInstanceState</code>, <code>onCreate</code>)을 정하는 상태 전이 모델</li>
+          <li><a class="wikilink" href="#activity-lifecycle">Activity Lifecycle</a> — 이 Bundle이 저장/복원되는 시점 (<code>onSaveInstanceState</code>, <code>onCreate</code>)을 정하는 상태 전이 모델</li>
+          <li><a class="wikilink" href="#parcelable">Parcelable</a> — Bundle 자신이 구현한 규약이자, Bundle에 커스텀 객체를 담을 때 필요한 직렬화 방식</li>
+          <li><a class="wikilink" href="#binder">Binder</a> — Bundle이 Parcel로 직렬화돼 건너가는 IPC 메커니즘, <code>TransactionTooLargeException</code>의 1MB 한계가 나오는 곳</li>
         </ul>
       </div>
     </section>
@@ -1010,7 +1013,7 @@ A → B 로 화면 이동 (구간이 겹친다)
           <li><strong>콜백에 코루틴을 직접 띄우지 않기</strong>: <code>lifecycleScope</code>를 써야 파괴 시 자동 취소됨. 화면이 보일 때만 수집하려면 <code>repeatOnLifecycle(STARTED)</code></li>
           <li><strong><code>configChanges</code>로 회전 재생성 막기는 최후의 수단</strong>: 재생성을 피한 대신 리소스 재적용을 직접 처리해야 하고, 프로세스 kill 복원은 여전히 필요</li>
           <li><strong>콜백에 로직을 쌓지 않기</strong>: 카메라·위치·분석 로직이 전부 <code>onStart</code>/<code>onStop</code>에 모이면 Activity가 비대해짐 → <a class="wikilink" href="#jetpack-lifecycle">Jetpack Lifecycle</a>의 <code>DefaultLifecycleObserver</code>로 관심사 분리</li>
-          <li><strong>Fragment는 생명주기가 두 겹</strong>: Activity 콜백 + <code>onAttach</code>/<code>onCreateView</code>/ <code>onViewCreated</code>/<code>onDestroyView</code>/<code>onDetach</code>. 백스택에 들어가면 <strong>view만 파괴</strong>되고 인스턴스는 살아있으므로, 뷰 바인딩은 <code>onDestroyView</code>에서 <code>null</code> 처리 필수</li>
+          <li><strong>Fragment는 생명주기가 두 겹</strong>: Activity 콜백 + <code>onAttach</code>/<code>onCreateView</code>/<code>onViewCreated</code>/<code>onDestroyView</code>/<code>onDetach</code>. 백스택에 들어가면 <strong>view만 파괴</strong>되고 인스턴스는 살아있으므로, 뷰 바인딩은 <code>onDestroyView</code>에서 <code>null</code> 처리 필수</li>
         </ul>
 
         <h2>7. 관련 문서</h2>
@@ -1124,6 +1127,147 @@ A → B 로 화면 이동 (구간이 겹친다)
         <h2>6. 관련 문서</h2>
         <ul>
           <li><a class="wikilink" href="#anr">ANR (Application Not Responding)</a> — GC pause가 잦고 길어지면 메인 스레드가 밀려 ANR 원인이 될 수 있음</li>
+          <li><a class="wikilink" href="#binder">Binder</a> — 같은 플랫폼 아키텍처 계층에서 프로세스 간 통신을 담당하는 커널 드라이버 기반 메커니즘</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="binder" class="note-section">
+      <div class="note-header">
+        <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">Binder</span></div>
+        <h1>Binder</h1>
+        <div class="note-meta">
+          <span>수정일 2026-09-27</span>
+          <span class="read-time"></span>
+          <span><span class="tag">android</span><span class="tag">binder</span><span class="tag">ipc</span><span class="tag">rpc</span><span class="tag">kernel</span><span class="tag">aidl</span><span class="tag">parcel</span><span class="tag">system-server</span></span>
+        </div>
+      </div>
+      <div class="note-body">
+        <h2>1. 정의</h2>
+        <ul>
+          <li>프로세스 경계를 넘어 <strong>메서드를 호출하게 해주는</strong> 커널 드라이버 기반 RPC(Remote Procedure Call) 프레임워크</li>
+          <li>저장소가 <strong>아님</strong> — 데이터를 어딘가에 놓아두는 게 아니라 요청 → 실행 → 응답으로 끝나는 통신 메커니즘</li>
+          <li>안드로이드 IPC의 사실상 유일한 통로 — 앱 ↔ <code>system_server</code>, 앱 ↔ 앱, 앱 ↔ HAL 전부 이 위에서 동작</li>
+          <li>비유 그대로 — Binder가 배송 시스템, <a class="wikilink" href="#parcelable">Parcelable</a>의 <code>Parcel</code>이 실려가는 소포</li>
+        </ul>
+
+        <h2>2. 목적 (AS-IS / TO-BE)</h2>
+        <p>리눅스에 이미 IPC 수단이 여러 개 있는데도 안드로이드가 Binder를 새로 만든 이유.</p>
+        <p><strong>AS-IS — 기존 리눅스 IPC의 한계</strong></p>
+        <ul>
+          <li><strong>복사 2회</strong>: 소켓/파이프는 <code>유저공간 → 커널 → 유저공간</code> → 모바일에서 낭비가 큼</li>
+          <li><strong>신원 위조 가능</strong>: 호출자가 자기 UID를 스스로 주장 → 권한 검사를 신뢰할 수 없음</li>
+          <li><strong>수명 관리 부재</strong>: 상대 프로세스가 죽었는지 알 방법이 없음</li>
+          <li><strong>동시성 직접 구현</strong>: 요청마다 스레드를 붙이는 일을 앱이 알아서 해야 함</li>
+        </ul>
+        <p><strong>TO-BE — Binder 도입 후</strong></p>
+        <ul>
+          <li><strong>1회 복사</strong>: 커널이 수신 프로세스 주소 공간에 버퍼를 <code>mmap</code>해둠 → 송신 측에서 그 버퍼로 한 번만 복사</li>
+          <li><strong>커널이 신원 보증</strong>: 호출자 UID/PID를 커널이 주입 → <code>Binder.getCallingUid()</code>로 확인. <strong>안드로이드 권한 모델 전체가 여기에 기댐</strong></li>
+          <li><strong>참조 카운팅 + 사망 통지</strong>: 원격 객체 수명을 커널이 관리, 상대가 죽으면 <code>DeathRecipient</code> 콜백</li>
+          <li><strong>커널 관리 스레드 풀</strong>: 요청마다 수신 측 Binder 스레드 풀에서 스레드 배정 → 동기 호출이 일반 함수 호출처럼 보임</li>
+        </ul>
+
+        <h2>3. 구조</h2>
+        <svg viewBox="0 0 700 330" width="100%" style="max-width:700px;height:auto;display:block;margin:6px auto" role="img" aria-label="Binder 구조도: 앱 프로세스의 Proxy가 transact로 커널 Binder 드라이버에 Parcel을 넘기고, 드라이버가 수신 프로세스의 Stub에서 onTransact를 호출하며, 결과 Parcel이 같은 경로를 역방향으로 돌아온다">
+          <defs>
+            <marker id="bd-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--text-dim)"/>
+            </marker>
+          </defs>
+          <g font-family="system-ui, sans-serif" font-size="13">
+            <rect x="25" y="30" width="260" height="112" rx="10" fill="none" stroke="var(--border)" stroke-dasharray="4 3"/>
+            <text x="37" y="50" fill="var(--text-dim)" font-size="11">앱 프로세스</text>
+            <rect x="50" y="62" width="210" height="48" rx="8" fill="var(--code-bg)" stroke="var(--border)"/>
+            <text x="155" y="91" fill="var(--text)" text-anchor="middle">Proxy (BinderProxy)</text>
+
+            <rect x="415" y="30" width="260" height="112" rx="10" fill="none" stroke="var(--border)" stroke-dasharray="4 3"/>
+            <text x="427" y="50" fill="var(--text-dim)" font-size="11">system_server / 다른 앱 프로세스</text>
+            <rect x="440" y="62" width="210" height="48" rx="8" fill="var(--code-bg)" stroke="var(--border)"/>
+            <text x="545" y="91" fill="var(--text)" text-anchor="middle">Stub (Binder)</text>
+
+            <line x1="95" y1="110" x2="95" y2="224" stroke="var(--text-dim)" marker-end="url(#bd-arrow)"/>
+            <text x="105" y="162" fill="var(--text)" font-size="12">transact(Parcel)</text>
+
+            <line x1="470" y1="224" x2="470" y2="110" stroke="var(--text-dim)" marker-end="url(#bd-arrow)"/>
+            <text x="480" y="162" fill="var(--text)" font-size="12">onTransact(Parcel)</text>
+
+            <line x1="620" y1="110" x2="620" y2="224" stroke="var(--text-dim)" stroke-dasharray="4 3" marker-end="url(#bd-arrow)"/>
+            <text x="612" y="200" fill="var(--text-dim)" font-size="12" text-anchor="end">결과 Parcel</text>
+
+            <line x1="245" y1="224" x2="245" y2="110" stroke="var(--text-dim)" stroke-dasharray="4 3" marker-end="url(#bd-arrow)"/>
+            <text x="255" y="200" fill="var(--text-dim)" font-size="12">리턴값</text>
+
+            <rect x="25" y="228" width="650" height="78" rx="10" fill="var(--accent-dim)" stroke="var(--accent)"/>
+            <text x="350" y="260" fill="var(--text)" text-anchor="middle">/dev/binder — 커널 Binder 드라이버</text>
+            <text x="350" y="284" fill="var(--text-dim)" font-size="11" text-anchor="middle">1회 복사 · 호출자 UID/PID 주입 · 수신 측 Binder 스레드 배정</text>
+          </g>
+        </svg>
+        <ul>
+          <li><strong>Proxy</strong>: 클라이언트 측 대리인 → 인자를 <code>Parcel</code>에 쓰고 <code>transact()</code> 호출, 응답까지 호출 스레드 블로킹</li>
+          <li><strong>Stub</strong>: 서버 측 수신부 → <code>onTransact()</code>에서 <code>Parcel</code>을 읽어 실제 메서드 실행, 결과를 다시 <code>Parcel</code>에 씀</li>
+          <li><strong>IBinder</strong>: Proxy와 Stub이 공유하는 인터페이스 → 같은 프로세스면 Stub 자체, 다른 프로세스면 <code>BinderProxy</code>가 넘어옴</li>
+          <li><strong>ServiceManager</strong>: 핸들 0번으로 고정된 특수 Binder → 서비스 이름 → Binder 핸들을 찾아주는 전화번호부</li>
+          <li><strong>AIDL</strong>: 이 Proxy/Stub 보일러플레이트를 인터페이스 정의만으로 생성해주는 도구</li>
+        </ul>
+
+        <h2>4. 호출 흐름</h2>
+        <p><code>getSystemService()</code>로 받은 객체의 메서드 한 줄이 실제로는 아래 단계를 거침.</p>
+        <ol>
+          <li>Proxy가 메서드 인자를 <code>Parcel</code>에 순서대로 씀</li>
+          <li><code>transact(code, data, reply, flags)</code> → 커널 <code>/dev/binder</code>로 진입</li>
+          <li>커널이 송신 버퍼를 <strong>수신 프로세스에 <code>mmap</code>된 버퍼로 1회 복사</strong>하고, 호출자 UID/PID를 함께 주입</li>
+          <li>커널이 수신 측 Binder 스레드 풀에서 스레드를 깨워 <code>onTransact(code, ...)</code> 호출</li>
+          <li>Stub이 <code>code</code>로 메서드를 분기 → 실제 구현 실행</li>
+          <li>리턴값을 <code>reply</code> Parcel에 담아 역방향으로 → 블로킹돼 있던 호출 스레드가 값을 받고 재개</li>
+        </ol>
+        <pre><code>// 개발자가 쓰는 코드 — 평범한 함수 호출처럼 보인다
+val am = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+am.appTasks          // 내부에서 위 6단계가 전부 일어남
+
+// bindService 콜백이 주는 IBinder를 인터페이스로 되돌리는 지점
+override fun onServiceConnected(name: ComponentName, service: IBinder) {
+    val api = IMyService.Stub.asInterface(service)  // 같은 프로세스면 Stub, 아니면 Proxy
+}</code></pre>
+
+        <h2>5. 통신인가 저장인가</h2>
+        <p>"커널이 버퍼를 <code>mmap</code>해둔다"는 설명 때문에 Binder를 저장 메커니즘으로 오해하기 쉬움.</p>
+        <ul>
+          <li>그 버퍼는 <strong>전송 중 데이터가 잠깐 놓이는 통과 지점</strong> → 창고가 아니라 컨베이어 벨트</li>
+          <li>트랜잭션이 끝나면 즉시 반환 → 다음 호출이 같은 공간을 다시 씀</li>
+          <li>1MB 한계도 "저장 용량 부족"이 아니라 <strong>한 번에 실어보낼 수 있는 양의 한계</strong> → 여러 호출로 쪼개면 문제없음</li>
+          <li>"메모리/컨테이너" 성격에 가까운 건 Binder가 아니라 <code>Parcel</code>이고, 그 Parcel조차 전송 후 버려지는 일회용 버퍼</li>
+        </ul>
+        <table>
+          <thead><tr><th>메커니즘</th><th>성격</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Binder</strong></td><td>통신 / RPC — 상대 프로세스의 코드를 실행시킴</td></tr>
+            <tr><td>공유 메모리 (ashmem)</td><td>저장 — 양쪽이 같은 메모리를 보면서 읽고 씀</td></tr>
+            <tr><td>ContentProvider</td><td>통신(Binder 기반) + 그 뒤의 저장(보통 SQLite)</td></tr>
+            <tr><td>SharedPreferences / Room</td><td>저장</td></tr>
+          </tbody>
+        </table>
+        <p>큰 데이터를 넘길 때의 우회법이 이 구분을 잘 보여줌 — <strong>Binder로는 "어디에 있는지"만 알려주고</strong>(ID, <code>content://</code> URI, FileDescriptor) 실제 데이터는 별도 저장 수단에 둠. Binder가 저장소라면 이런 우회가 필요 없을 것.</p>
+
+        <h2>6. 실무 고려사항</h2>
+        <ul>
+          <li><strong><code>TransactionTooLargeException</code></strong>: Binder 버퍼는 프로세스당 약 1MB <strong>공유</strong> → 진행 중인 다른 트랜잭션까지 합산됨. Bitmap을 <a class="wikilink" href="#intent">Intent</a>에 담는 대신 URI/ID만 전달</li>
+          <li><strong>Binder 스레드에서 UI 금지</strong>: 콜백은 Binder 스레드 풀에서 실행 → UI를 만지려면 <code>Handler</code>로 메인 스레드에 넘겨야 함</li>
+          <li><strong><code>Handler</code>/<code>Looper</code>와의 구분</strong>: Binder는 <strong>프로세스 간</strong>, Handler는 <strong>같은 프로세스의 스레드 간</strong> — 층이 다름</li>
+          <li><strong>동기 호출이 <a class="wikilink" href="#anr">ANR (Application Not Responding)</a>의 원인</strong>: 메인 스레드에서 Binder 호출 → 상대 프로세스 응답까지 블로킹. ANR 트레이스에서 메인 스레드가 <code>BinderProxy.transactNative</code>에 머물러 있으면 이 경우</li>
+          <li><strong><code>oneway</code></strong>: AIDL에서 응답을 기다리지 않는 단방향 호출 선언 → 블로킹 제거, 단 리턴값/예외를 받을 수 없고 순서 보장도 약해짐</li>
+          <li><strong><code>DeathRecipient</code></strong>: 상대 프로세스 사망 알림 → 원격 서비스를 붙잡고 있는 코드는 이걸 등록해두고 재연결 처리</li>
+          <li><strong><code>Binder.getCallingUid()</code> 위치 주의</strong>: 자기 스레드에서 직접 부르면 자기 UID가 나옴 → 반드시 <code>onTransact</code> 처리 경로 안에서, <code>clearCallingIdentity()</code> 호출 전에 읽어야 함</li>
+        </ul>
+
+        <h2>7. 관련 문서</h2>
+        <ul>
+          <li><a class="wikilink" href="#parcelable">Parcelable</a> — Binder에 실어보낼 객체를 평탄화하는 규약, <code>Parcel</code>이 그 전송 포맷</li>
+          <li><a class="wikilink" href="#bundle">Bundle</a> — Parcel로 직렬화돼 Binder를 타고 <code>system_server</code>에 보관되는 상태 컨테이너</li>
+          <li><a class="wikilink" href="#intent">Intent</a> — 컴포넌트 실행 요청이 Binder를 거쳐 <code>system_server</code>로 전달됨</li>
+          <li><a class="wikilink" href="#task">Task</a> — BackStack을 들고 있는 <code>system_server</code>와의 통신이 전부 Binder</li>
+          <li><a class="wikilink" href="#anr">ANR (Application Not Responding)</a> — 메인 스레드의 Binder 블로킹이 대표적 원인</li>
+          <li><a class="wikilink" href="#android-runtime">Android Runtime</a> — 같은 플랫폼 아키텍처 계층의 구성 요소</li>
         </ul>
       </div>
     </section>
@@ -1694,6 +1838,7 @@ fun increment() { _count.value = _count.value!! + 1 }   // 첫 호출에서 NPE<
         <ul>
           <li><a class="wikilink" href="#android-runtime">Android Runtime</a></li>
           <li><a class="wikilink" href="#activity-lifecycle">Activity Lifecycle</a> — 메인 스레드를 오래 붙잡으면 ANR로 이어지는 콜백들(<code>onCreate</code>/<code>onPause</code>)이 어디에 있는지</li>
+          <li><a class="wikilink" href="#binder">Binder</a> — 메인 스레드의 동기 IPC 호출이 상대 프로세스 응답까지 블로킹되면서 ANR로 이어지는 경로</li>
         </ul>
       </div>
     </section>
@@ -1829,6 +1974,11 @@ coroutineScope { repeat(100) { launch { increment(dataStore) } } }</code></pre>
           <li><strong>마이그레이션</strong>: 기존 SharedPreferences 데이터는 <code>SharedPreferencesMigration</code>으로 최초 1회 자동 이전 가능</li>
           <li><strong>어느 걸 쓸지</strong>: 단순 설정 몇 개면 Preferences DataStore, 구조가 복잡하거나 스키마 안정성이 중요하면 Proto DataStore</li>
           <li><strong>동기 접근 불가</strong>: 항상 <code>Flow</code>/<code>suspend</code>로만 꺼낼 수 있어서, 동기 접근이 필요한 레거시 코드는 마이그레이션 비용이 있을 수 있음</li>
+        </ul>
+
+        <h2>7. 관련 문서</h2>
+        <ul>
+          <li><a class="wikilink" href="#parcelable">Parcelable</a> — Proto DataStore가 쓰는 <code>kotlinx.serialization</code>과 안드로이드 IPC용 <code>Parcelable</code>의 역할 차이</li>
         </ul>
       </div>
     </section>
@@ -2080,6 +2230,178 @@ startActivity(intent) // 시스템이 설치된 브라우저 중 골라서(혹�
           <li><a class="wikilink" href="#bundle">Bundle</a> — Intent의 extras에 담기는 데이터 구조</li>
           <li><a class="wikilink" href="#file-uri-vs-content-uri">File URI vs Content URI</a> — Intent에 파일을 실어 보낼 때 file URI 대신 content URI + 권한 플래그를 쓰는 이유</li>
           <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 딥링크가 <code>ACTION_VIEW</code> Intent로 도착하고, 알림 PendingIntent로 특정 목적지를 여는 경로</li>
+          <li><a class="wikilink" href="#parcelable">Parcelable</a> — extras에 커스텀 객체를 실을 때 필요한 직렬화 규약</li>
+          <li><a class="wikilink" href="#binder">Binder</a> — 이 Intent가 <code>system_server</code>로 전달될 때 타는 IPC 경로</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="parcelable" class="note-section">
+      <div class="note-header">
+        <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">Parcelable</span></div>
+        <h1>Parcelable</h1>
+        <div class="note-meta">
+          <span>수정일 2026-09-27</span>
+          <span class="read-time"></span>
+          <span><span class="tag">android</span><span class="tag">parcelable</span><span class="tag">parcel</span><span class="tag">serializable</span><span class="tag">ipc</span><span class="tag">binder</span><span class="tag">kotlinx-serialization</span><span class="tag">parcelize</span></span>
+        </div>
+      </div>
+      <div class="note-body">
+        <h2>1. 정의</h2>
+        <ul>
+          <li><strong>Parcel</strong>: 직렬화된 데이터 + Binder 참조를 담는 컨테이너 — <a class="wikilink" href="#binder">Binder</a> IPC의 전송 포맷</li>
+          <li><strong>Parcelable</strong>: 내 객체를 Parcel에 담을 수 있게 만드는 규약 (안드로이드 전용 인터페이스)</li>
+          <li><strong>Serializable</strong>: 이름이 같은 것이 둘 — JDK 표준 <code>java.io.Serializable</code>, Kotlin 라이브러리 <code>kotlinx.serialization.Serializable</code> (5번 참고)</li>
+          <li>이름이 그대로 비유 — Binder가 배송 시스템, Parcel이 소포, Parcelable이 포장 규격</li>
+        </ul>
+
+        <h2>2. 핵심 개념</h2>
+        <ul>
+          <li><strong>왜 필요한가</strong>: 컴포넌트 간 데이터 전달은 프로세스 경계를 넘을 수 있음 → Binder는 객체 참조를 못 넘기고 바이트만 넘김 → 객체를 평탄화(flatten)하는 규약이 필요</li>
+          <li><strong>쓰는 자리</strong>: <a class="wikilink" href="#intent">Intent</a> extras, <a class="wikilink" href="#bundle">Bundle</a>, Fragment arguments, AIDL — 전부 Binder를 타는 경로</li>
+          <li><strong>순서 규약</strong>: Parcel은 순차 read/write 커서 → 쓴 순서 = 읽는 순서, 어긋나면 값 손상 또는 <code>BadParcelableException</code></li>
+          <li><strong>CREATOR</strong>: 역직렬화 진입점 → 프레임워크가 리플렉션으로 <code>CREATOR</code>라는 이름의 static 필드를 찾아 <code>createFromParcel()</code> 호출 → 이름이 다르거나 없으면 런타임 크래시</li>
+          <li><strong>영속화 금지</strong>: Parcel 포맷은 OS 버전 간 호환 미보장 → 파일/DB/네트워크에 저장 불가. "지금 프로세스 사이를 건너가는 동안만" 유효한 일회용 버퍼</li>
+        </ul>
+
+        <h2>3. Parcel 동작 방식</h2>
+        <p>커널 Binder 드라이버가 관리하는 버퍼에 값을 순서대로 쓰고, 받는 쪽이 같은 순서로 읽는 구조. 어디에도 필드 이름이 들어가지 않는 <strong>이름 없는 바이트 뭉치</strong>라서 순서가 유일한 계약이 됨.</p>
+        <pre><code>writeInt(1) → writeString("a") → writeLong(3L)
+
+readInt()   → readString()     → readLong()     ✅ 쓴 순서와 동일
+readInt()   → readLong()       → readString()   ❌ 값 깨짐 / 예외</code></pre>
+        <ul>
+          <li><strong><code>dataPosition()</code>/<code>setDataPosition()</code></strong>: 커서를 직접 옮길 수 있지만 실무에서 손댈 일 없음</li>
+          <li><strong><code>describeContents()</code></strong>: FileDescriptor를 포함하면 <code>CONTENTS_FILE_DESCRIPTOR</code>, 아니면 <code>0</code></li>
+          <li><strong>재활용</strong>: <code>Parcel.obtain()</code>/<code>recycle()</code>로 풀에서 꺼내 쓰고 반납 — 트랜잭션마다 새로 할당하지 않음</li>
+        </ul>
+
+        <h2>4. Parcelable 구현</h2>
+
+        <h3>4-1 직접 구현</h3>
+        <p><code>writeToParcel</code>(쓰기)과 <code>CREATOR</code>(읽기)를 손으로 맞춰 쓰는 원래 방식</p>
+        <ul>
+          <li><strong>특징</strong>: 보일러플레이트 많음, 읽기/쓰기 순서를 사람이 맞춰야 해서 필드 추가 시 실수 나기 쉬움</li>
+          <li><strong>사용 상황</strong>: Java 코드베이스, 또는 <code>@Parcelize</code>로 표현 안 되는 특수한 직렬화 로직</li>
+        </ul>
+        <pre><code>class User(val id: Int, val name: String) : Parcelable {
+
+    // Parcel → 객체 (읽는 순서가 write와 동일해야 함)
+    constructor(parcel: Parcel) : this(
+        parcel.readInt(),
+        parcel.readString()!!
+    )
+
+    // 객체 → Parcel
+    override fun writeToParcel(parcel: Parcel, flags: Int) {
+        parcel.writeInt(id)
+        parcel.writeString(name)
+    }
+
+    override fun describeContents() = 0
+
+    // 반드시 이 이름의 static 필드여야 프레임워크가 찾음
+    companion object CREATOR : Parcelable.Creator&lt;User&gt; {
+        override fun createFromParcel(parcel: Parcel) = User(parcel)
+        override fun newArray(size: Int) = arrayOfNulls&lt;User&gt;(size)
+    }
+}</code></pre>
+
+        <h3>4-2 @Parcelize (권장)</h3>
+        <p><code>kotlin-parcelize</code> 플러그인이 <code>writeToParcel</code>/<code>CREATOR</code>를 <strong>컴파일 타임에 생성</strong></p>
+        <ul>
+          <li><strong>특징</strong>: 순서 불일치 실수가 원천 차단, 필드 추가만 하면 직렬화 코드도 따라 갱신</li>
+          <li><strong>사용 상황</strong>: 새로 쓰는 Kotlin 코드의 기본값</li>
+          <li><strong>주의</strong>: 클래스의 모든 프로퍼티가 Parcel에 담을 수 있는 타입이어야 함</li>
+        </ul>
+        <pre><code>// build.gradle.kts: plugins { id("kotlin-parcelize") }
+
+@Parcelize
+data class User(val id: Int, val name: String) : Parcelable</code></pre>
+
+        <h3>4-3 커스텀 타입 — TypeParceler</h3>
+        <p>Parcel이 기본 지원하지 않는 타입(<code>Date</code> 등)을 <code>@Parcelize</code>에 끼워 넣는 방법</p>
+        <ul>
+          <li><strong>특징</strong>: <code>Parceler&lt;T&gt;</code>로 변환 규칙만 따로 정의 → 클래스 본문은 그대로 유지</li>
+          <li><strong>사용 상황</strong>: 서드파티/JDK 타입을 필드로 들고 있는 모델</li>
+        </ul>
+        <pre><code>object DateParceler : Parceler&lt;Date&gt; {
+    override fun create(parcel: Parcel) = Date(parcel.readLong())
+    override fun Date.write(parcel: Parcel, flags: Int) = parcel.writeLong(time)
+}
+
+@Parcelize
+@TypeParceler&lt;Date, DateParceler&gt;
+data class Event(val at: Date) : Parcelable</code></pre>
+
+        <h2>5. Serializable — 이름이 같은 둘</h2>
+        <p><code>Parcelable</code>과 비교 대상으로 흔히 나오는 "Serializable"은 <strong><code>java.io.Serializable</code></strong> 쪽. <code>kotlinx.serialization</code>의 <code>@Serializable</code>은 이름만 같고 별개의 라이브러리.</p>
+
+        <h3>5-1 java.io.Serializable</h3>
+        <p>JDK 표준 마커 인터페이스 — 인터페이스만 붙이면 JVM이 리플렉션으로 알아서 직렬화</p>
+        <ul>
+          <li><strong>특징</strong>: 코드량 0, JVM 전용 바이너리 포맷 고정, <strong>런타임 리플렉션</strong>으로 매번 클래스 구조 조사</li>
+          <li><strong>느린 이유</strong>: 필드마다 <code>Field</code> 객체 생성 → 임시 객체 대량 발생 → GC 압박. 직렬화가 느린 게 아니라 <strong>리플렉션이 느린 것</strong></li>
+          <li><strong>사용 상황</strong>: 레거시 자바 API 호환이 필요할 때만. 안드로이드에서 새로 쓸 이유 없음</li>
+        </ul>
+
+        <h3>5-2 kotlinx.serialization</h3>
+        <p>Kotlin 멀티플랫폼 직렬화 라이브러리 — 컴파일러 플러그인이 <code>KSerializer</code>를 <strong>컴파일 타임에 생성</strong></p>
+        <ul>
+          <li><strong>특징</strong>: 리플렉션 없음, 포맷 선택 가능(JSON/Protobuf/CBOR), 언어·플랫폼 무관</li>
+          <li><strong><code>SerialDescriptor</code></strong>: 필드 이름·타입·기본값 정보를 들고 있음 → 이름 기반 변환이 가능한 지점</li>
+          <li><strong>사용 상황</strong>: 서버 통신(Retrofit/Ktor), <a class="wikilink" href="#datastore">DataStore</a> 저장, 설정 파일, <a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a>의 타입 안전 라우트</li>
+        </ul>
+        <pre><code>@kotlinx.serialization.Serializable
+data class User(val id: Int, val name: String)
+
+val json = Json.encodeToString(User(1, "a"))   // {"id":1,"name":"a"}</code></pre>
+
+        <h3>5-3 역할 구분</h3>
+        <table>
+          <thead><tr><th></th><th>java.io.Serializable</th><th>kotlinx.serialization</th><th>Parcelable</th></tr></thead>
+          <tbody>
+            <tr><td>역할</td><td>범용 직렬화</td><td>범용 직렬화 (<strong>같음</strong>)</td><td>안드로이드 IPC 전용</td></tr>
+            <tr><td>동작 시점</td><td>런타임 리플렉션</td><td>컴파일 타임 코드 생성</td><td>컴파일 타임(<code>@Parcelize</code>)</td></tr>
+            <tr><td>출력</td><td>JVM 바이너리 고정</td><td>JSON/Protobuf/CBOR 선택</td><td>Binder용 <code>Parcel</code></td></tr>
+            <tr><td>이식성</td><td>JVM 간에만</td><td>언어·플랫폼 무관</td><td>안드로이드 전용, <strong>버전 간 호환 없음</strong></td></tr>
+            <tr><td>용도</td><td>레거시</td><td>네트워크·영속화</td><td>Intent / Bundle / AIDL</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li><strong><code>java.io.Serializable</code> ↔ <code>kotlinx.serialization</code></strong>: 역할이 같은 구세대/신세대 → <strong>서로 대체 관계</strong></li>
+          <li><strong>Parcelable ↔ 나머지 둘</strong>: 서로 대체 불가 → Parcelable은 포맷 호환이 없어서 범용으로 못 쓰고, 범용 직렬화는 Binder 경로에서 비효율</li>
+          <li>그래서 한 클래스에 <code>@Parcelize</code>와 <code>@Serializable</code>이 같이 붙는 경우가 흔함 (화면 간 전달 + 서버 전송 둘 다 필요)</li>
+        </ul>
+        <pre><code>@Parcelize
+@Serializable                        // kotlinx — 목적이 다르므로 공존
+data class User(val id: Int, val name: String) : Parcelable</code></pre>
+
+        <h2>6. 실무 고려사항</h2>
+        <ul>
+          <li><strong><code>TransactionTooLargeException</code></strong>: Binder 트랜잭션 버퍼는 프로세스당 약 1MB 공유 → Bitmap/대형 리스트를 Intent에 담으면 터짐. ID나 URI만 넘기고 수신 측에서 다시 조회하는 방식으로 우회</li>
+          <li><strong>Bundle의 lazy 역직렬화</strong>: Bundle에 담긴 Parcelable은 <strong>꺼내는 시점</strong>에 역직렬화 → 잘못된 클래스가 들어있어도 <code>getParcelable()</code> 호출 때 비로소 터짐</li>
+          <li><strong>API 33+ <code>getParcelable</code></strong>: 타입을 명시하는 오버로드로 교체됨</li>
+        </ul>
+        <pre><code>intent.getParcelableExtra&lt;User&gt;("user")                 // deprecated
+intent.getParcelableExtra("user", User::class.java)     // API 33+</code></pre>
+        <ul>
+          <li><strong>딥카피 보장 아님</strong>: 같은 프로세스 안에서는 Parcel을 실제로 타지 않고 참조가 그대로 전달될 수 있음 → "전달하면 복사된다"에 의존한 코드는 위험</li>
+          <li><strong>nullable 필드</strong>: 직접 구현 시 null 여부 플래그를 함께 써야 함</li>
+        </ul>
+        <pre><code>parcel.writeByte(if (value != null) 1 else 0)
+value?.let { parcel.writeString(it) }</code></pre>
+        <ul>
+          <li><strong><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> 라우트에는 부적합</strong>: 목적지를 문자열(route 패턴/딥링크 URI)로 표현해야 하는데 Parcel은 이름 없는 바이트 뭉치 → 대신 <code>@Serializable</code> 사용</li>
+        </ul>
+
+        <h2>7. 관련 문서</h2>
+        <ul>
+          <li><a class="wikilink" href="#binder">Binder</a> — Parcel을 실어 프로세스 경계를 넘기는 IPC 메커니즘, 1MB 한계의 출처</li>
+          <li><a class="wikilink" href="#bundle">Bundle</a> — <code>Parcelable</code> 구현체이자 Parcelable 객체를 담는 key-value 컨테이너</li>
+          <li><a class="wikilink" href="#intent">Intent</a> — extras에 Parcelable을 실어 컴포넌트 간 전달</li>
+          <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 타입 안전 라우트가 Parcelable이 아니라 <code>@Serializable</code>을 쓰는 이유</li>
+          <li><a class="wikilink" href="#datastore">DataStore</a> — <code>kotlinx.serialization</code>으로 직렬화해 영속화하는 쪽 사례</li>
         </ul>
       </div>
     </section>
@@ -2503,7 +2825,7 @@ navController.popBackStack&lt;Home&gt;(inclusive = false)                    // 
           <li><strong>Bundle</strong> — 프로세스 사망 후 백스택 복원</li>
           <li><strong>URI 문자열</strong> — 딥링크, 목적지 식별</li>
         </ul>
-        <p>→ 라우트 객체는 *필드 이름·타입 목록을 알 수 있고 양방향 변환이 가능한* 형태여야 함. <code>@Serializable</code>이 그걸 컴파일 타임에 제공</p>
+        <p>→ 라우트 객체는 <em>필드 이름·타입 목록을 알 수 있고 양방향 변환이 가능한</em> 형태여야 함. <code>@Serializable</code>이 그걸 컴파일 타임에 제공</p>
         <ul>
           <li>kotlinx.serialization 컴파일러 플러그인이 <code>KSerializer</code>와 그 <strong><code>SerialDescriptor</code></strong>(필드명, 타입, 기본값 존재 여부)를 생성</li>
           <li>Navigation 2.8은 이 descriptor를 읽어 예전에 손으로 쓰던 것들을 <strong>자동 생성</strong></li>
@@ -2583,7 +2905,6 @@ navController.popBackStack&lt;Home&gt;(inclusive = false)                    // 
           <li>URI 매칭, 인자 파싱 + 타입 변환 + 디코딩</li>
           <li><strong>합성 백스택 자동 구성</strong>: 그래프 계층을 따라 start destination부터 목표까지 쌓아줌 → 딥링크로 들어와도 back이 Home으로 동작</li>
         </ul>
-
         <svg viewBox="0 0 660 230" width="100%" style="max-width:660px;height:auto;display:block;margin:4px auto" role="img" aria-label="딥링크 백스택 비교: 수동 처리는 Detail만 쌓여 back 시 앱 종료, Navigation은 Home 위에 Detail을 합성">
           <g font-family="system-ui, sans-serif" font-size="13">
             <text x="12" y="20" fill="var(--text-dim)" font-size="12">수동 처리 — 목표 화면만 띄움</text>
@@ -2592,9 +2913,9 @@ navController.popBackStack&lt;Home&gt;(inclusive = false)                    // 
             <text x="132" y="98" fill="var(--text-dim)" font-size="12" text-anchor="middle">↓ 뒤로가기</text>
             <rect x="12" y="112" width="240" height="40" rx="6" fill="none" stroke="var(--border)" stroke-dasharray="4 3"/>
             <text x="132" y="137" fill="var(--text-dim)" text-anchor="middle">앱 종료 (스택이 비어있음)</text>
-        
+
             <line x1="330" y1="14" x2="330" y2="216" stroke="var(--border)"/>
-        
+
             <text x="408" y="20" fill="var(--text-dim)" font-size="12">Navigation — 합성 백스택 자동 구성</text>
             <rect x="408" y="34" width="240" height="40" rx="6" fill="var(--accent-dim)" stroke="var(--accent)"/>
             <text x="528" y="59" fill="var(--text)" text-anchor="middle">ProductDetail</text>
@@ -2605,7 +2926,6 @@ navController.popBackStack&lt;Home&gt;(inclusive = false)                    // 
             <text x="528" y="183" fill="var(--text)" text-anchor="middle">Home 으로 복귀</text>
           </g>
         </svg>
-
         <p>XML 그래프를 쓰면 매니페스트 중복도 사라짐</p>
         <pre><code>&lt;!-- nav_graph.xml --&gt;
 &lt;fragment android:id="@+id/productDetailFragment" ...&gt;
@@ -2661,6 +2981,7 @@ navController.popBackStack&lt;Home&gt;(inclusive = false)                    // 
           <li><a class="wikilink" href="#android-manifest">AndroidManifest</a> — 딥링크 <code>&lt;intent-filter&gt;</code> 등록과 <code>&lt;nav-graph&gt;</code> 확장이 일어나는 지점</li>
           <li><a class="wikilink" href="#bundle">Bundle</a> — 라우트 인자와 <code>SavedStateHandle</code>이 저장/복원되는 실제 자료구조</li>
           <li><a class="wikilink" href="#hilt">Hilt</a> — <code>hiltViewModel(parent)</code>로 중첩 그래프 스코프 ViewModel을 주입하는 조합</li>
+          <li><a class="wikilink" href="#parcelable">Parcelable</a> — 라우트가 <code>Parcelable</code> 대신 <code>@Serializable</code>을 쓰는 이유와 두 직렬화 방식의 역할 구분</li>
         </ul>
       </div>
     </section>
@@ -2729,6 +3050,7 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     { slug: "jetpack-lifecycle", title: "Jetpack Lifecycle", group: "dev", category: "android", subcategory: "app-entry-points", tags: ["android","jetpack","lifecycle","lifecycleowner","lifecycleobserver","lifecycleregistry"], updated: "2026-09-20" },
     { slug: "activity-lifecycle", title: "Activity Lifecycle", group: "dev", category: "android", subcategory: "app-entry-points", tags: ["android","activity","lifecycle","callback","savedinstancestate","configuration-change"], updated: "2026-09-27" },
     { slug: "android-runtime", title: "Android Runtime", group: "dev", category: "android", subcategory: "platform-architecture", tags: ["android","runtime","art","dalvik","jit","aot"], updated: "2026-09-12" },
+    { slug: "binder", title: "Binder", group: "dev", category: "android", subcategory: "platform-architecture", tags: ["android","binder","ipc","rpc","kernel","aidl","parcel","system-server"], updated: "2026-09-27" },
     { slug: "annotation-processor", title: "Annotation Processor", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","kotlin","java","kapt","ksp","build","codegen"], updated: "2026-09-12" },
     { slug: "data-binding", title: "Data Binding", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","databinding","viewbinding","bindingadapter","xml","jetpack"], updated: "2026-09-20" },
     { slug: "hilt", title: "Hilt", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","di","dependency-injection","hilt","dagger","kotlin"], updated: "2026-09-19" },
@@ -2738,6 +3060,7 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     { slug: "file-uri-vs-content-uri", title: "File URI vs Content URI", group: "dev", category: "android", subcategory: "app-components", tags: ["android","uri","fileprovider","contentprovider","intent","scoped-storage"], updated: "2026-09-13" },
     { slug: "saf", title: "SAF (Storage Access Framework)", group: "dev", category: "android", subcategory: "app-components", tags: ["android","saf","storage-access-framework","documentsprovider","content-uri","scoped-storage"], updated: "2026-09-13" },
     { slug: "intent", title: "Intent", group: "dev", category: "android", subcategory: "app-components", tags: ["android","intent","intent-filter","activity","broadcast","pendingintent","packagemanager"], updated: "2026-09-20" },
+    { slug: "parcelable", title: "Parcelable", group: "dev", category: "android", subcategory: "app-components", tags: ["android","parcelable","parcel","serializable","ipc","binder","kotlinx-serialization","parcelize"], updated: "2026-09-27" },
     { slug: "android-manifest", title: "AndroidManifest", group: "dev", category: "android", subcategory: "app-manifest", tags: ["android","manifest","packagemanager","exported","intent-resolution","applicationid"], updated: "2026-09-21" },
     { slug: "jetpack-navigation", title: "Jetpack Navigation", group: "dev", category: "android", subcategory: "app-navigation", tags: ["android","jetpack","navigation","navcontroller","navhost","navgraph","deeplink","type-safe-route","compose"], updated: "2026-09-27" },
     { slug: "web-server", title: "웹서버", group: "dev", category: "backend", tags: ["web-server","http","deployment","backend"], updated: "2026-08-31" }
