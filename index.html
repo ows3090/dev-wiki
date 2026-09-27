@@ -538,6 +538,7 @@
           <li><a class="wikilink" href="#task">Task</a></li>
           <li><a class="wikilink" href="#intent">Intent</a> — 같은 Intent라도 launchMode에 따라 기존 인스턴스 재사용 여부가 달라짐</li>
           <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — <code>launchSingleTop</code>/<code>popUpTo</code>로 같은 문제를 Fragment·Composable 레벨에서 해결</li>
+          <li><a class="wikilink" href="#activity-lifecycle">Activity Lifecycle</a> — 재사용된 인스턴스는 <code>onCreate</code> 대신 <code>onNewIntent</code> → <code>onResume</code> 경로를 타므로 콜백 순서가 달라짐</li>
         </ul>
       </div>
     </section>
@@ -600,6 +601,7 @@
           <li><a class="wikilink" href="#bundle">Bundle</a> — <code>onSaveInstanceState()</code>로 저장된 Bundle이 <code>ActivityRecord</code>에 붙어 system_server에 보관되는 구조가 여기서 이어짐</li>
           <li><a class="wikilink" href="#intent">Intent</a> — Task에 새 Activity가 쌓이는 트리거가 되는 메시지 객체</li>
           <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 이 Activity 백스택 안에서 목적지 단위 백스택을 한 겹 더 쌓아 관리하는 라이브러리</li>
+          <li><a class="wikilink" href="#activity-lifecycle">Activity Lifecycle</a> — 이 스택에 쌓인 각 Activity가 개별적으로 거치는 상태 전이와 콜백</li>
         </ul>
       </div>
     </section>
@@ -691,6 +693,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
           <li><a class="wikilink" href="#task">Task</a></li>
           <li><a class="wikilink" href="#intent">Intent</a> — extras에 Bundle 구조를 그대로 실어 컴포넌트 간 데이터를 전달</li>
           <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 라우트 인자와 <code>SavedStateHandle</code>이 이 구조로 저장/복원됨</li>
+          <li><a class="wikilink" href="#activity-lifecycle">Activity Lifecycle</a> — 이 Bundle이 저장/복원되는 시점(<code>onSaveInstanceState</code>, <code>onCreate</code>)을 정하는 상태 전이 모델</li>
         </ul>
       </div>
     </section>
@@ -803,6 +806,220 @@ class CameraObserver : MyObserver {
         <ul>
           <li><a class="wikilink" href="#data-binding">Data Binding</a> — <code>LiveData</code>로 양방향 바인딩을 자동 갱신하려면 <code>binding.lifecycleOwner</code> 지정이 필수인데, 그게 바로 이 <code>LifecycleOwner</code></li>
           <li><a class="wikilink" href="#live-data">LiveData</a> — 값을 전달할지 판단할 때 내부적으로 이 State/Event 체계를 확인</li>
+          <li><a class="wikilink" href="#activity-lifecycle">Activity Lifecycle</a> — 이 라이브러리가 관찰 대상으로 삼는 원본 콜백 체계</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="activity-lifecycle" class="note-section">
+      <div class="note-header">
+        <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">Activity Lifecycle</span></div>
+        <h1>Activity Lifecycle</h1>
+        <div class="note-meta">
+          <span>수정일 2026-09-27</span>
+          <span class="read-time"></span>
+          <span><span class="tag">android</span><span class="tag">activity</span><span class="tag">lifecycle</span><span class="tag">callback</span><span class="tag">savedinstancestate</span><span class="tag">configuration-change</span></span>
+        </div>
+      </div>
+      <div class="note-body">
+        <h2>1. 정의</h2>
+        <ul>
+          <li>Activity가 <strong>생성 → 화면 표시 → 가려짐 → 소멸</strong>까지 거치는 상태 전이 모델</li>
+          <li>메모리와 포커스의 통제권이 앱이 아니라 <strong>시스템</strong>에 있음 → 시스템이 언제든 Activity를 멈추거나 죽이거나 재생성</li>
+          <li>각 전이 지점에 콜백을 제공 → "리소스를 잡을 타이밍 / 놓을 타이밍"을 앱이 알 수 있게 하는 장치</li>
+          <li>콜백을 잘못 다루면 메모리 누수, 상태 유실, ANR, 크래시로 직결</li>
+        </ul>
+
+        <h2>2. 핵심 개념</h2>
+        <ul>
+          <li><strong>상태(State) vs 콜백(Callback)</strong>: 상태 = 지금 Activity가 놓인 위치, 콜백 = 상태가 바뀌는 순간의 통지 → 콜백은 상태가 아니라 <strong>전이 이벤트</strong></li>
+          <li><strong>가시성 3단계</strong>: <code>RESUMED</code>(보임 + 포커스) → <code>STARTED</code>(보임, 포커스 없음) → <code>CREATED</code>/STOPPED(안 보임)</li>
+          <li><strong>kill 우선순위</strong>: 포그라운드는 사실상 안 죽음 → 안 보이는 Activity일수록 메모리 압박 시 먼저 kill 대상</li>
+          <li><strong>콜백의 비대칭성</strong>: <code>onPause</code>/<code>onStop</code> 뒤에 <code>onDestroy</code>가 <strong>보장되지 않음</strong> — 프로세스가 그냥 kill될 수 있음 → 영속 저장은 <code>onStop</code>까지 끝내야 함</li>
+          <li><strong>전이의 겹침</strong>: A → B 이동 시 <code>A.onPause</code> 직후 바로 B가 시작 → A가 완전히 멈춘 뒤 B가 뜨는 게 아니므로 <code>onPause</code>가 무거우면 화면 전환이 늦어짐</li>
+          <li><strong>재생성과 인스턴스 교체</strong>: 화면 회전 같은 구성 변경은 Activity 인스턴스를 파괴하고 <strong>새로 만듦</strong> → 필드에 들고 있던 값은 기본적으로 사라짐</li>
+        </ul>
+        <svg viewBox="0 0 700 350" width="100%" style="max-width:700px;height:auto;display:block;margin:6px auto" role="img" aria-label="Activity 생명주기 상태 전이도: onCreate로 CREATED, onStart로 STARTED, onResume으로 RESUMED, onPause와 onStop으로 되돌아오고 onDestroy로 소멸">
+          <defs>
+            <marker id="al-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--text-dim)"/>
+            </marker>
+          </defs>
+          <g font-family="system-ui, sans-serif" font-size="13">
+            <text x="300" y="20" fill="var(--text-dim)" font-size="12" text-anchor="middle">Activity 인스턴스 생성</text>
+            <line x1="300" y1="28" x2="300" y2="56" stroke="var(--text-dim)" marker-end="url(#al-arrow)"/>
+            <text x="310" y="48" fill="var(--text)" font-size="12">onCreate</text>
+
+            <rect x="210" y="60" width="180" height="44" rx="8" fill="var(--code-bg)" stroke="var(--border)"/>
+            <text x="300" y="87" fill="var(--text)" text-anchor="middle">CREATED</text>
+            <text x="204" y="52" fill="var(--text-dim)" font-size="11" text-anchor="end">안 보임 · kill 후보</text>
+
+            <line x1="276" y1="104" x2="276" y2="156" stroke="var(--text-dim)" marker-end="url(#al-arrow)"/>
+            <text x="268" y="134" fill="var(--text)" font-size="12" text-anchor="end">onStart</text>
+            <line x1="324" y1="156" x2="324" y2="104" stroke="var(--text-dim)" marker-end="url(#al-arrow)"/>
+            <text x="332" y="134" fill="var(--text)" font-size="12">onStop</text>
+
+            <rect x="210" y="160" width="180" height="44" rx="8" fill="var(--code-bg)" stroke="var(--border)"/>
+            <text x="300" y="187" fill="var(--text)" text-anchor="middle">STARTED</text>
+            <text x="404" y="187" fill="var(--text-dim)" font-size="11">보이지만 포커스 없음</text>
+
+            <line x1="276" y1="204" x2="276" y2="256" stroke="var(--text-dim)" marker-end="url(#al-arrow)"/>
+            <text x="268" y="234" fill="var(--text)" font-size="12" text-anchor="end">onResume</text>
+            <line x1="324" y1="256" x2="324" y2="204" stroke="var(--text-dim)" marker-end="url(#al-arrow)"/>
+            <text x="332" y="234" fill="var(--text)" font-size="12">onPause</text>
+
+            <rect x="210" y="260" width="180" height="44" rx="8" fill="var(--accent-dim)" stroke="var(--accent)"/>
+            <text x="300" y="287" fill="var(--text)" text-anchor="middle">RESUMED</text>
+            <text x="404" y="287" fill="var(--text-dim)" font-size="11">보이고 포커스 있음 · 안 죽음</text>
+
+            <path d="M 210 92 L 140 92 L 140 182 L 204 182" fill="none" stroke="var(--text-dim)" stroke-dasharray="4 3" marker-end="url(#al-arrow)"/>
+            <text x="134" y="137" fill="var(--text-dim)" font-size="11" text-anchor="end">onRestart</text>
+
+            <line x1="390" y1="82" x2="464" y2="82" stroke="var(--text-dim)" marker-end="url(#al-arrow)"/>
+            <text x="427" y="72" fill="var(--text)" font-size="12" text-anchor="middle">onDestroy</text>
+            <rect x="468" y="60" width="180" height="44" rx="8" fill="none" stroke="var(--border)" stroke-dasharray="4 3"/>
+            <text x="558" y="87" fill="var(--text-dim)" text-anchor="middle">DESTROYED</text>
+            <text x="558" y="122" fill="var(--text-dim)" font-size="11" text-anchor="middle">프로세스 kill 시 생략 가능</text>
+          </g>
+        </svg>
+
+        <h2>3. 콜백 종류</h2>
+
+        <h3>3-1 onCreate(savedInstanceState)</h3>
+        <p>인스턴스가 만들어진 직후 <strong>딱 한 번</strong> 호출되는 진입점.</p>
+        <ul>
+          <li><strong>특징</strong>: 유일하게 인자를 받음 — 이전에 저장된 <code>Bundle</code>이 있으면 여기로 전달, 최초 실행이면 <code>null</code></li>
+          <li><strong>특징</strong>: 아직 화면에 보이지 않는 시점 → 뷰가 measure/layout 전이라 크기(<code>width</code>/<code>height</code>)는 <code>0</code></li>
+          <li><strong>사용 상황</strong>: <code>setContentView</code>, 뷰 바인딩, ViewModel 연결, 어댑터 설정, 저장된 상태 복원 — "한 번만 하면 되는 것" 전부</li>
+        </ul>
+        <pre><code>override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    binding = ActivityMainBinding.inflate(layoutInflater)
+    setContentView(binding.root)
+    savedInstanceState?.getString("draft")?.let { binding.input.setText(it) }
+}</code></pre>
+
+        <h3>3-2 onStart()</h3>
+        <p>화면에 <strong>보이기 시작</strong>하는 시점 (아직 포커스는 없음).</p>
+        <ul>
+          <li><strong>특징</strong>: 여러 번 호출될 수 있음 — 백그라운드 → 복귀 때마다 다시 불림</li>
+          <li><strong>특징</strong>: 여기서부터 <code>onStop</code> 전까지가 "사용자에게 보이는 구간"</li>
+          <li><strong>사용 상황</strong>: 보일 때만 필요한 것 등록 — <code>BroadcastReceiver</code>, 위치 업데이트, 화면에 반영할 데이터 구독</li>
+        </ul>
+
+        <h3>3-3 onResume()</h3>
+        <p>포커스를 얻어 <strong>사용자 입력을 받을 수 있는</strong> 상태.</p>
+        <ul>
+          <li><strong>특징</strong>: Activity가 실제로 상호작용 가능한 유일한 상태 (<code>RESUMED</code>)</li>
+          <li><strong>특징</strong>: <code>onPause</code>와 정확히 쌍을 이룸 → 여기서 잡은 건 <code>onPause</code>에서 놓기</li>
+          <li><strong>사용 상황</strong>: 카메라/센서 열기, 애니메이션·비디오 재생 시작</li>
+        </ul>
+
+        <h3>3-4 onPause()</h3>
+        <p>포커스를 잃는 시점 — <strong>일부라도 가려지면</strong> 호출.</p>
+        <ul>
+          <li><strong>특징</strong>: 다음 Activity 시작과 <strong>겹쳐 실행</strong>되므로 반드시 가볍고 빨라야 함</li>
+          <li><strong>특징</strong>: 여기서 끝나고 다시 <code>onResume</code>으로 돌아올 수도 있음 (다이얼로그가 닫히는 경우) → <code>onStop</code>이 항상 따라오는 게 아님</li>
+          <li><strong>사용 상황</strong>: 애니메이션 정지, 카메라 해제 — 무거운 저장은 금지</li>
+        </ul>
+
+        <h3>3-5 onStop()</h3>
+        <p>화면에서 <strong>완전히 사라진</strong> 시점.</p>
+        <ul>
+          <li><strong>특징</strong>: 이 시점 이후 프로세스가 통보 없이 kill될 수 있음 → <strong>영속 저장의 마지노선</strong></li>
+          <li><strong>특징</strong>: <code>onStart</code>와 쌍 → <code>onStart</code>에서 등록한 것을 해제</li>
+          <li><strong>사용 상황</strong>: DB 저장, 네트워크 작업 취소, Receiver 해제</li>
+        </ul>
+
+        <h3>3-6 onRestart()</h3>
+        <p><code>onStop</code> 이후 다시 보이게 될 때, <code>onStart</code> <strong>직전</strong>에 호출.</p>
+        <ul>
+          <li><strong>특징</strong>: 최초 실행에는 호출되지 않음 — "재진입"에만 불리는 콜백</li>
+          <li><strong>사용 상황</strong>: 실무에서는 거의 안 씀 — 재진입/최초 진입을 구분해야 하는 드문 경우에만</li>
+        </ul>
+
+        <h3>3-7 onDestroy()</h3>
+        <p>인스턴스 소멸 직전 마지막 콜백.</p>
+        <ul>
+          <li><strong>특징</strong>: <strong>호출이 보장되지 않음</strong> — 시스템이 프로세스를 kill하면 생략됨</li>
+          <li><strong>특징</strong>: 종료(<code>finish()</code>)와 구성 변경 재생성 둘 다에서 불림 → <code>isFinishing</code>으로 구분</li>
+          <li><strong>사용 상황</strong>: 최종 정리(스레드 종료, 콜백 해제). 여기에만 의존하는 로직은 두지 않음</li>
+        </ul>
+        <pre><code>override fun onDestroy() {
+    super.onDestroy()
+    if (isFinishing) clearDraft()   // 진짜 종료
+    else { /* 회전 등 재생성 — 곧 새 인스턴스가 생김 */ }
+}</code></pre>
+
+        <h2>4. 시나리오별 호출 순서</h2>
+        <p>실제로 어떤 순서로 불리는지가 가장 많이 헷갈리는 부분.</p>
+        <pre><code>앱 최초 실행
+  onCreate → onStart → onResume
+
+홈 버튼 (다른 앱으로 이동)
+  onPause → onStop
+  복귀 시: onRestart → onStart → onResume
+
+다이얼로그 스타일 / 반투명 Activity가 위에 뜸
+  onPause            ← onStop 없음 (아직 보이는 상태)
+  닫히면: onResume
+
+A → B 로 화면 이동 (구간이 겹친다)
+  A.onPause → B.onCreate → B.onStart → B.onResume → A.onStop
+
+화면 회전 (구성 변경)
+  onPause → onStop → onSaveInstanceState → onDestroy
+  → onCreate → onStart → onRestoreInstanceState → onResume
+
+뒤로가기 / finish()
+  onPause → onStop → onDestroy
+  ← onSaveInstanceState 호출 안 됨 (돌아올 일이 없으므로)
+
+메모리 부족으로 프로세스 kill
+  onPause → onStop → onSaveInstanceState → (onDestroy 없음, 프로세스 종료)
+  복귀 시: onCreate(savedInstanceState 있음) → onStart → onResume</code></pre>
+        <ul>
+          <li>겹침 구간(<code>A.onPause</code> → <code>B.onResume</code> → <code>A.onStop</code>)이 핵심 — A의 정리 작업을 <code>onPause</code>에 몰아넣으면 B가 뜨는 속도가 그만큼 늦어짐</li>
+          <li><code>onSaveInstanceState</code>는 "돌아올 가능성이 있을 때만" 불림 → 뒤로가기엔 없고, 회전·kill엔 있음</li>
+        </ul>
+
+        <h2>5. 상태 저장 전략</h2>
+        <p>세 수단의 생존 범위가 달라서, 무엇을 지켜야 하는지에 따라 골라 쓰고 조합한다.</p>
+        <ul>
+          <li><strong><code>Bundle</code>(<code>onSaveInstanceState</code>)</strong>: 구성 변경 + <strong>프로세스 kill까지 생존</strong>. 단 시스템 IPC로 전달되므로 <strong>소량만</strong> (<code>TransactionTooLargeException</code>) → 스크롤 위치, 입력 중인 텍스트, 선택된 탭</li>
+          <li><strong><code>ViewModel</code></strong>: 구성 변경은 버티지만 <strong>프로세스 kill엔 소멸</strong>. 용량 제한 없음 → 리스트 데이터, 진행 중인 비동기 작업</li>
+          <li><strong>로컬 저장소(Room/DataStore)</strong>: 앱을 완전히 종료해도 생존 → 사용자가 잃으면 안 되는 데이터</li>
+          <li><strong><code>SavedStateHandle</code></strong>: ViewModel 안에서 Bundle에 쓰는 통로 → 위 두 개를 한 곳에서 합치는 실무 표준</li>
+        </ul>
+        <pre><code>class EditorViewModel(private val state: SavedStateHandle) : ViewModel() {
+    // 큰 데이터: 회전은 버티지만 kill엔 사라짐 → 필요하면 DB에서 다시 읽음
+    val articles = MutableStateFlow&lt;List&lt;Article&gt;&gt;(emptyList())
+
+    // 작은 UI 상태: Bundle로 넘어가 프로세스 kill 후에도 복원됨
+    var draft: String
+        get() = state["draft"] ?: ""
+        set(value) { state["draft"] = value }
+}</code></pre>
+
+        <h2>6. 실무 고려사항</h2>
+        <ul>
+          <li><strong><code>onPause</code>에 무거운 작업 금지</strong>: 다음 화면 전환이 눌린 듯 느려지고, 심하면 <a class="wikilink" href="#anr">ANR (Application Not Responding)</a>로 이어짐 → 저장은 <code>onStop</code>으로</li>
+          <li><strong><code>onDestroy</code>에 정리를 의존하지 않기</strong>: 호출 보장이 없음 → 꼭 해야 하는 해제는 <code>onStop</code>까지, 또는 lifecycle-aware 컴포넌트에 맡김</li>
+          <li><strong><code>super</code> 호출 누락</strong>: 생명주기 콜백에서 <code>super</code>를 빼면 <code>SuperNotCalledException</code></li>
+          <li><strong><code>onCreate</code>에서 뷰 크기 읽기</strong>: 아직 measure 전이라 <code>0</code> → <code>doOnLayout</code> / <code>OnGlobalLayoutListener</code> 사용</li>
+          <li><strong>콜백에 코루틴을 직접 띄우지 않기</strong>: <code>lifecycleScope</code>를 써야 파괴 시 자동 취소됨. 화면이 보일 때만 수집하려면 <code>repeatOnLifecycle(STARTED)</code></li>
+          <li><strong><code>configChanges</code>로 회전 재생성 막기는 최후의 수단</strong>: 재생성을 피한 대신 리소스 재적용을 직접 처리해야 하고, 프로세스 kill 복원은 여전히 필요</li>
+          <li><strong>콜백에 로직을 쌓지 않기</strong>: 카메라·위치·분석 로직이 전부 <code>onStart</code>/<code>onStop</code>에 모이면 Activity가 비대해짐 → <a class="wikilink" href="#jetpack-lifecycle">Jetpack Lifecycle</a>의 <code>DefaultLifecycleObserver</code>로 관심사 분리</li>
+          <li><strong>Fragment는 생명주기가 두 겹</strong>: Activity 콜백 + <code>onAttach</code>/<code>onCreateView</code>/ <code>onViewCreated</code>/<code>onDestroyView</code>/<code>onDetach</code>. 백스택에 들어가면 <strong>view만 파괴</strong>되고 인스턴스는 살아있으므로, 뷰 바인딩은 <code>onDestroyView</code>에서 <code>null</code> 처리 필수</li>
+        </ul>
+
+        <h2>7. 관련 문서</h2>
+        <ul>
+          <li><a class="wikilink" href="#task">Task</a> — 이 생명주기가 실제로 어느 스택 위에서 도는지, Activity가 쌓이고 빠지는 구조</li>
+          <li><a class="wikilink" href="#activity-launch-mode">Activity LaunchMode</a> — 같은 Activity를 다시 열 때 새 인스턴스를 <code>onCreate</code>부터 시작할지, 기존 인스턴스에 <code>onNewIntent</code>로 전달할지 결정</li>
+          <li><a class="wikilink" href="#bundle">Bundle</a> — <code>onSaveInstanceState</code>/<code>onRestoreInstanceState</code>가 주고받는 자료구조와 용량 제한</li>
+          <li><a class="wikilink" href="#jetpack-lifecycle">Jetpack Lifecycle</a> — 이 콜백들을 옵저버로 관찰 가능하게 만들어 Activity 밖으로 분리하는 라이브러리</li>
+          <li><a class="wikilink" href="#anr">ANR (Application Not Responding)</a> — <code>onPause</code>/<code>onCreate</code> 같은 콜백을 메인 스레드에서 오래 붙잡을 때 터지는 결과</li>
         </ul>
       </div>
     </section>
@@ -1476,6 +1693,7 @@ fun increment() { _count.value = _count.value!! + 1 }   // 첫 호출에서 NPE<
         <h2>5. 관련 문서</h2>
         <ul>
           <li><a class="wikilink" href="#android-runtime">Android Runtime</a></li>
+          <li><a class="wikilink" href="#activity-lifecycle">Activity Lifecycle</a> — 메인 스레드를 오래 붙잡으면 ANR로 이어지는 콜백들(<code>onCreate</code>/<code>onPause</code>)이 어디에 있는지</li>
         </ul>
       </div>
     </section>
@@ -2509,6 +2727,7 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     { slug: "task", title: "Task", group: "dev", category: "android", subcategory: "app-entry-points", tags: ["android","task","back-stack","activity"], updated: "2026-09-12" },
     { slug: "bundle", title: "Bundle", group: "dev", category: "android", subcategory: "app-entry-points", tags: ["android","bundle","intent","activity","persistablebundle","savedinstancestate"], updated: "2026-09-12" },
     { slug: "jetpack-lifecycle", title: "Jetpack Lifecycle", group: "dev", category: "android", subcategory: "app-entry-points", tags: ["android","jetpack","lifecycle","lifecycleowner","lifecycleobserver","lifecycleregistry"], updated: "2026-09-20" },
+    { slug: "activity-lifecycle", title: "Activity Lifecycle", group: "dev", category: "android", subcategory: "app-entry-points", tags: ["android","activity","lifecycle","callback","savedinstancestate","configuration-change"], updated: "2026-09-27" },
     { slug: "android-runtime", title: "Android Runtime", group: "dev", category: "android", subcategory: "platform-architecture", tags: ["android","runtime","art","dalvik","jit","aot"], updated: "2026-09-12" },
     { slug: "annotation-processor", title: "Annotation Processor", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","kotlin","java","kapt","ksp","build","codegen"], updated: "2026-09-12" },
     { slug: "data-binding", title: "Data Binding", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","databinding","viewbinding","bindingadapter","xml","jetpack"], updated: "2026-09-20" },
