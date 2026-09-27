@@ -526,6 +526,7 @@
         <ul>
           <li><a class="wikilink" href="#task">Task</a></li>
           <li><a class="wikilink" href="#intent">Intent</a> — 같은 Intent라도 launchMode에 따라 기존 인스턴스 재사용 여부가 달라짐</li>
+          <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — <code>launchSingleTop</code>/<code>popUpTo</code>로 같은 문제를 Fragment·Composable 레벨에서 해결</li>
         </ul>
       </div>
     </section>
@@ -576,7 +577,7 @@
         <p>메모리 부족으로 앱 프로세스가 kill돼도, 태스크 전체가 한 번에 복원되진 않음</p>
         <ul>
           <li>system_server엔 <code>ActivityRecord</code> 메타데이터만 남아있고, 실제 Activity 객체는 죽은 상태</li>
-          <li>태스크로 복귀하면 <strong>최상단만</strong> 새 프로세스에서 재생성(<code>onCreate(savedInstanceState)</code>)</li>
+          <li>태스크로 복귀하면 <strong>최상단만</strong> 새 프로세스에서 재생성 (<code>onCreate(savedInstanceState)</code>)</li>
           <li>뒤로가기를 눌러야 그 아래 Activity가 그때 재생성됨 → 필요한 순간에만 하나씩 복원(lazy)</li>
           <li>복원되려면 kill 전에 <code>onSaveInstanceState()</code>로 상태를 저장해뒀어야 함</li>
           <li>사용자가 최근 앱 목록에서 태스크를 직접 스와이프해서 지우면 태스크 자체가 종료(finish)되어 이 복원 메커니즘이 아예 적용되지 않음 (<code>android:alwaysRetainTaskState="true"</code>로 예외 가능)</li>
@@ -587,6 +588,7 @@
           <li><a class="wikilink" href="#activity-launch-mode">Activity LaunchMode</a></li>
           <li><a class="wikilink" href="#bundle">Bundle</a> — <code>onSaveInstanceState()</code>로 저장된 Bundle이 <code>ActivityRecord</code>에 붙어 system_server에 보관되는 구조가 여기서 이어짐</li>
           <li><a class="wikilink" href="#intent">Intent</a> — Task에 새 Activity가 쌓이는 트리거가 되는 메시지 객체</li>
+          <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 이 Activity 백스택 안에서 목적지 단위 백스택을 한 겹 더 쌓아 관리하는 라이브러리</li>
         </ul>
       </div>
     </section>
@@ -617,6 +619,7 @@
         </ul>
 
         <h2>3. 사용 위치</h2>
+
         <h3>3-1 Intent와 함께 (컴포넌트 간 전달)</h3>
         <p>Activity/Service를 시작할 때 데이터를 함께 넘기는 용도</p>
         <ul>
@@ -647,21 +650,21 @@ override fun onCreate(savedInstanceState: Bundle?) {
 }</code></pre>
 
         <h2>4. 프로세스가 죽어도 값이 보존되는 이유</h2>
-        <p>Bundle 자체를 앱 프로세스가 들고 있는 게 아니라, <a class="wikilink" href="#task">Task</a>의 BackStack을 관리하는 것과 같은 <strong>system_server 프로세스</strong>가 대신 들고 있음</p>
+        <p>Bundle 자체를 앱 프로세스가 들고 있는 게 아니라, <a class="wikilink" href="#task">Task</a>의 BackStack을 관리하는 것과 같은 <strong><code>system_server</code> 프로세스</strong>가 대신 들고 있음</p>
         <ol>
           <li>시스템이 백그라운드 Activity를 죽이기 <strong>직전</strong>, 아직 살아있는 프로세스에서 <code>onSaveInstanceState(Bundle)</code> 호출</li>
-          <li>채워진 Bundle을 시스템이 Parcel(바이트 배열)로 직렬화해서 system_server 안의 <code>ActivityRecord</code>에 붙여둠</li>
-          <li>이 시점부터 내 앱 프로세스가 죽어도 상관없음 — 데이터는 system_server 메모리에 있음</li>
+          <li>채워진 Bundle을 시스템이 Parcel(바이트 배열)로 직렬화해서 <code>system_server</code> 안의 <code>ActivityRecord</code>에 붙여둠</li>
+          <li>이 시점부터 내 앱 프로세스가 죽어도 상관없음 — 데이터는 <code>system_server</code> 메모리에 있음</li>
           <li>사용자가 다시 그 화면으로 돌아오면 시스템이 새 프로세스/새 Activity 인스턴스를 만들며 들고 있던 Parcel을 풀어 <code>onCreate(savedInstanceState)</code>로 전달</li>
         </ol>
-        <p>어디까지나 <strong>메모리에만</strong> 있는 데이터라 system_server도 같이 죽는 <strong>기기 재부팅</strong>은 못 버팀 (재부팅까지 버티려면 5번 PersistableBundle 필요).</p>
+        <p>어디까지나 <strong>메모리에만</strong> 있는 데이터라 <code>system_server</code>도 같이 죽는 <strong>기기 재부팅</strong>은 못 버팀 (재부팅까지 버티려면 5번 <code>PersistableBundle</code> 필요).</p>
 
         <h2>5. PersistableBundle — 재부팅까지 생존</h2>
         <p>일반 Bundle과 목적이 다름: Bundle은 "프로세스 킬 생존", PersistableBundle은 "재부팅 생존"</p>
         <ul>
           <li>별도의 <strong>2-인자 오버로드</strong> 쌍으로 동작 — 저장은 <code>onSaveInstanceState(Bundle, PersistableBundle)</code>, 복원은 <code>onCreate(Bundle, PersistableBundle)</code>(또는 <code>onPostCreate</code>)</li>
           <li>아무 Activity에서나 동작하지 않고, 매니페스트에 <code>android:persistableMode="persistRootOnly"</code>를 선언한 <strong>태스크의 루트 Activity</strong>에서만 의미가 있음</li>
-          <li>실제로 쓰이는 자리는 <strong>최근 앱(Recents) 목록의 재부팅 후 복원</strong> — system_server의 <code>TaskPersister</code>가 최근 태스크 정보를 디스크에 XML로 저장할 때 PersistableBundle도 함께 직렬화</li>
+          <li>실제로 쓰이는 자리는 <strong>최근 앱(Recents) 목록의 재부팅 후 복원</strong> — <code>system_server</code>의 <code>TaskPersister</code>가 최근 태스크 정보를 디스크에 XML로 저장할 때 PersistableBundle도 함께 직렬화</li>
           <li>XML로 직렬화 가능해야 하므로 담을 수 있는 타입이 제한적 — 원시 타입, 그 배열, <code>String</code>, 다른 <code>PersistableBundle</code>만 가능 (임의의 <code>Parcelable</code>/<code>Serializable</code> 불가)</li>
         </ul>
 
@@ -676,6 +679,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
         <ul>
           <li><a class="wikilink" href="#task">Task</a></li>
           <li><a class="wikilink" href="#intent">Intent</a> — extras에 Bundle 구조를 그대로 실어 컴포넌트 간 데이터를 전달</li>
+          <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 라우트 인자와 <code>SavedStateHandle</code>이 이 구조로 저장/복원됨</li>
         </ul>
       </div>
     </section>
@@ -842,7 +846,7 @@ class CameraObserver : MyObserver {
         <ul>
           <li><strong>특징 (5.0~6.0, 초기 ART)</strong>
             <ul>
-              <li><strong>AOT(Ahead-Of-Time)</strong>: 앱 <strong>설치 시점</strong>에 DEX 전체를 미리 네이티브 코드로 컴파일(<code>dex2oat</code>)</li>
+              <li><strong>AOT(Ahead-Of-Time)</strong>: 앱 <strong>설치 시점</strong>에 DEX 전체를 미리 네이티브 코드로 컴파일 (<code>dex2oat</code>)</li>
               <li>실행 시엔 이미 컴파일된 코드라 변환 비용 없이 바로 실행 → 속도·배터리 효율 개선, GC도 함께 개선</li>
               <li>단점: 설치/OTA 업데이트 시간이 길어지고, 실제로 안 쓰는 코드까지 전부 컴파일해 저장공간을 낭비</li>
             </ul>
@@ -921,7 +925,7 @@ class CameraObserver : MyObserver {
           <li><strong>동작 주체</strong>: <code>javac</code>(Java) 또는 Kotlin 컴파일러가 컴파일 파이프라인 안에서 등록된 프로세서를 호출</li>
           <li><strong>입력/출력</strong>
             <ul>
-              <li>입력 → 소스 코드의 AST(추상 구문 트리) 형태로 애노테이션이 붙은 요소(클래스, 메서드, 필드 등)</li>
+              <li>입력 → 소스 코드의 AST(추상 구문 트리) 형태로 애노테이션이 붙은 요소 (클래스, 메서드, 필드 등)</li>
               <li>출력 → 새로운 소스 파일(<code>.java</code>/<code>.kt</code>) 또는 컴파일 에러 메시지</li>
             </ul>
           </li>
@@ -974,215 +978,6 @@ public class MyProcessor extends AbstractProcessor {
         <ul>
           <li><a class="wikilink" href="#data-binding">Data Binding</a> — XML의 <code>@{}</code> 표현식과 소스의 <code>@BindingAdapter</code>를 매칭해 <code>XxxBinding</code> 클래스를 생성하는 데 Annotation Processor(KAPT/KSP)가 쓰임</li>
           <li><a class="wikilink" href="#hilt">Hilt</a> — <code>@Inject</code>/<code>@Module</code>을 읽어 DI 그래프 코드를 생성하는 데 Annotation Processor(kapt/KSP)를 사용</li>
-        </ul>
-      </div>
-    </section>
-
-    <section id="hilt" class="note-section">
-      <div class="note-header">
-        <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">Hilt</span></div>
-        <h1>Hilt</h1>
-        <div class="note-meta">
-          <span>수정일 2026-09-19</span>
-          <span class="read-time"></span>
-          <span><span class="tag">android</span><span class="tag">di</span><span class="tag">dependency-injection</span><span class="tag">hilt</span><span class="tag">dagger</span><span class="tag">kotlin</span></span>
-        </div>
-      </div>
-      <div class="note-body">
-        <h2>1. 정의</h2>
-        <ul>
-          <li>Android 공식 <strong>의존성 주입(Dependency Injection) 프레임워크</strong></li>
-          <li>Dagger를 기반으로 하되, Android 생명주기(Application/Activity/Fragment/ViewModel 등)에 맞춘 <strong>표준 컴포넌트 계층</strong>을 미리 만들어줘서 설정 보일러플레이트를 줄인 레이어</li>
-          <li>컴파일 타임에 <a class="wikilink" href="#annotation-processor">Annotation Processor</a>(kapt/KSP)가 DI 코드를 생성 → 런타임 리플렉션 방식(Koin 등)과 달리 오류를 빌드 시점에 잡음</li>
-        </ul>
-
-        <h2>2. 목적 (AS-IS / TO-BE)</h2>
-        <p><strong>AS-IS (DI 없이)</strong></p>
-        <ul>
-          <li>클래스 안에서 의존 객체를 직접 <code>new</code>(생성) → 강결합</li>
-          <li>테스트 시 Mock으로 교체하기 어려움</li>
-          <li>싱글톤을 직접 관리(static, 전역 객체)하다 생명주기 버그 발생</li>
-        </ul>
-        <p><strong>TO-BE (Hilt 도입 후)</strong></p>
-        <ul>
-          <li>필요한 타입을 생성자/필드에 요청만 하면 Hilt가 생성 로직을 대신 처리</li>
-          <li>생성 로직과 사용 로직 분리 → 테스트 시 가짜 구현체로 쉽게 교체</li>
-          <li>객체의 생명주기(앱 전체 싱글톤 vs 화면별 인스턴스)를 Hilt가 자동 관리</li>
-        </ul>
-
-        <h2>3. 핵심 어노테이션</h2>
-        <ul>
-          <li><strong><code>@HiltAndroidApp</code></strong>: Application 클래스에 부착. 앱 최상위 컨테이너(<code>SingletonComponent</code>)를 생성하는 진입점</li>
-          <li><strong><code>@AndroidEntryPoint</code></strong>: Activity/Fragment/Service/BroadcastReceiver 등에 부착. 해당 컴포넌트가 Hilt로부터 주입받을 수 있게 함</li>
-          <li><strong><code>@Inject</code></strong>
-            <ul>
-              <li>생성자에 붙이면 → "이 클래스를 어떻게 만드는지" Hilt가 자동으로 앎 (Module 불필요)</li>
-              <li>필드에 붙이면 → "이 필드를 채워달라"는 요청</li>
-            </ul>
-          </li>
-          <li><strong><code>@Module</code> + <code>@InstallIn</code></strong>: 인터페이스처럼 직접 <code>@Inject</code> 생성자를 못 붙이는 타입의 생성 레시피를 정의. <code>@InstallIn</code>으로 어느 컴포넌트에 등록할지 지정</li>
-        </ul>
-        <pre><code>@HiltAndroidApp
-class MyApp : Application()
-
-class ApiService @Inject constructor()
-class UserRepository @Inject constructor(private val api: ApiService)
-
-@HiltViewModel
-class UserViewModel @Inject constructor(private val repo: UserRepository) : ViewModel()
-
-@AndroidEntryPoint
-class MainActivity : AppCompatActivity() {
-    private val viewModel: UserViewModel by viewModels()
-    // MainActivity → UserViewModel 요청 → UserRepository 필요
-    // → ApiService 필요 → 순서대로 자동 생성/주입
-}</code></pre>
-
-        <h2>4. 컴포넌트 계층</h2>
-        <p><strong>컴포넌트(Component)</strong>: 안드로이드 생명주기에 맞춰 의존성 객체를 생성하고 관리하는 DI 컨테이너</p>
-        <p>구체적으로는:</p>
-        <ul>
-          <li>자신에게 등록된 타입마다 <strong>생성 메서드</strong>가 코드로 박혀 있음</li>
-          <li>스코프가 붙은 타입은 그 메서드가 <strong>이미 만든 인스턴스를 캐싱</strong>해뒀다가 반환, 스코프 없는 타입은 매번 새로 생성</li>
-          <li>이 컨테이너의 인스턴스 자체가 <strong>생명주기 시작 시 생성, 끝나면 소멸</strong> (Activity 죽으면 그 컨테이너와 캐싱된 값도 함께 사라짐)</li>
-        </ul>
-        <pre><code>// Dagger가 실제로 생성하는 코드를 단순화하면 대략 이런 모양
-class DaggerSingletonC : SingletonComponent {
-    // 스코프 있는 타입 → 캐싱하는 Provider로 감싸서 필드에 보관
-    private val retrofitProvider = DoubleCheck.provider(NetworkModule_ProvideRetrofitFactory.create())
-    override fun getRetrofit(): Retrofit = retrofitProvider.get()   // 두 번째 호출부터 캐시 반환
-
-    // 스코프 없는 타입 → 캐싱 없이 매번 생성 로직 그대로 호출
-    override fun getApiService(): ApiService = ApiService_Factory.create().get()
-}</code></pre>
-        <p>자식 컴포넌트는 부모에게 위임해서 찾을 수 있지만(안→밖), 부모는 자식을 모른다(한 방향).</p>
-        <pre><code>[App 프로세스 시작] → @HiltAndroidApp.onCreate()
-        ▼
-SingletonComponent          ◀── 최상위 컨테이너, 앱 종료까지 유지
-        ▼
-ActivityRetainedComponent → ActivityComponent → FragmentComponent ...
-        ▼
-ViewModelComponent</code></pre>
-        <table>
-          <thead><tr><th>컴포넌트</th><th>짝이 되는 스코프</th><th>생명주기</th></tr></thead>
-          <tbody>
-            <tr><td><code>SingletonComponent</code></td><td><code>@Singleton</code></td><td>Application</td></tr>
-            <tr><td><code>ActivityRetainedComponent</code></td><td><code>@ActivityRetainedScoped</code></td><td>ViewModelStore (화면 회전 생존)</td></tr>
-            <tr><td><code>ActivityComponent</code></td><td><code>@ActivityScoped</code></td><td>Activity 인스턴스</td></tr>
-            <tr><td><code>ViewModelComponent</code></td><td><code>@ViewModelScoped</code></td><td>ViewModel</td></tr>
-            <tr><td><code>FragmentComponent</code></td><td><code>@FragmentScoped</code></td><td>Fragment 인스턴스</td></tr>
-          </tbody>
-        </table>
-
-        <h3>4-1. SingletonComponent</h3>
-        <p>앱 생명주기 전체 동안 유지되는 최상위 컨테이너</p>
-        <ul>
-          <li><strong>특징</strong>
-            <ul>
-              <li>여기 등록된 타입은 앱이 종료될 때까지 존재할 수 있는 <strong>최대 범위</strong>를 가짐 (컴포넌트 = 어디까지 살 수 있는지의 한도)</li>
-              <li>등록만으로 인스턴스가 하나로 캐싱되는 건 아님 — 하나만 만들어 재사용하려면 <code>@Singleton</code> 스코프를 <strong>추가로</strong> 붙여야 함 (5번 섹션 참고)</li>
-            </ul>
-          </li>
-          <li><strong>사용 상황</strong>: Retrofit, Room DB, OkHttpClient처럼 앱 전역에서 하나만 있어야 하는 객체 → <code>@InstallIn(SingletonComponent::class)</code> + <code>@Singleton</code>을 함께 사용</li>
-        </ul>
-        <pre><code>@Module
-@InstallIn(SingletonComponent::class)
-object NetworkModule {
-    @Provides
-    @Singleton
-    fun provideRetrofit(): Retrofit =
-        Retrofit.Builder().baseUrl("https://api.example.com/").build()
-}</code></pre>
-
-        <h3>4-2. ActivityComponent vs ActivityRetainedComponent</h3>
-        <p>둘 다 Activity 관련 컴포넌트지만 <strong>무엇에 묶여 있는지</strong>가 다름</p>
-        <ul>
-          <li><strong>특징</strong>
-            <ul>
-              <li><code>ActivityComponent</code> → Activity <strong>인스턴스</strong>에 묶임</li>
-              <li><code>ActivityRetainedComponent</code> → <code>ViewModelStore</code>(회전 시 Android가 유지해주는 저장소)에 묶임</li>
-            </ul>
-          </li>
-          <li><strong>사용 상황</strong>: 화면 회전 시 데이터를 유지해야 하면 <code>ActivityRetainedComponent</code>(또는 <code>ViewModelComponent</code>), 화면 인스턴스와 함께 사라져도 되면 <code>ActivityComponent</code></li>
-        </ul>
-        <pre><code>[Activity 생성]      → ActivityComponent 생성      → @Inject 필드 채움
-        │
-        ▼ 화면 회전
-[Activity 소멸]       → ActivityComponent도 함께 소멸
-                         (@ActivityScoped 캐시도 같이 GC 대상)
-[새 Activity 생성]     → 새 ActivityComponent 생성   → 처음부터 다시 주입
-
-ActivityRetainedComponent는 이 회전 사이클과 무관하게 유지됨
-→ @HiltViewModel과 그 의존성이 회전해도 살아있는 이유</code></pre>
-        <pre><code>@HiltViewModel
-class UserViewModel @Inject constructor(
-    private val repo: UserRepository   // ActivityRetainedComponent 소속
-) : ViewModel()
-// 화면 회전해도 이 ViewModel 인스턴스와 repo는 그대로 유지됨</code></pre>
-
-        <h2>5. 컴포넌트(어디에) vs 스코프(캐싱할지)</h2>
-        <ul>
-          <li><strong>컴포넌트(<code>@InstallIn</code>)</strong>: 이 레시피가 어느 상자에 등록되는지 → 인스턴스가 <strong>최대 얼마나 오래 살 수 있는지</strong>의 한도만 정함</li>
-          <li><strong>스코프(<code>@Singleton</code> 등)</strong>: 그 상자 안에서 인스턴스를 캐싱해서 재사용할지 여부 → 이게 없으면 매번 새 인스턴스 생성</li>
-        </ul>
-        <pre><code>@Provides                    // @Singleton 없음 → 요청마다 새 Retrofit 생성
-fun provideRetrofit(): Retrofit = ...
-
-@Provides @Singleton         // 최초 1번만 생성, 이후 캐시 재사용
-fun provideRetrofit(): Retrofit = ...</code></pre>
-        <ul>
-          <li><strong>스코프는 자기 컴포넌트 것만 허용</strong>: <code>SingletonComponent</code>에 <code>@ActivityScoped</code>를 붙이면 컴파일 에러(<code>does not accept @ActivityScoped bindings</code>) → 한 바인딩당 선택지는 "언스코프드" 또는 "그 컴포넌트 고유 스코프" 둘 중 하나뿐 (<code>@DefineComponent</code>로 직접 컴포넌트를 정의하는 고급 케이스는 예외)</li>
-        </ul>
-
-        <h2>6. @Provides vs @Binds</h2>
-        <table>
-          <thead><tr><th></th><th>@Provides</th><th>@Binds</th></tr></thead>
-          <tbody>
-            <tr><td>형태</td><td>본문 있는 메서드 (직접 생성)</td><td>본문 없는 추상 메서드 (타입 매핑만)</td></tr>
-            <tr><td>생성되는 Factory</td><td>전용 Factory 새로 생성</td><td>없음 — 구현체의 기존 Factory 재사용</td></tr>
-            <tr><td>호출 경로</td><td><code>Factory.get()</code> → <code>Module.provideX()</code> 호출 → 생성 (3단계)</td><td><code>Factory.get()</code> → 생성 (2단계)</td></tr>
-            <tr><td>선언 타입</td><td><code>object</code></td><td><code>interface</code> 또는 <code>abstract class</code></td></tr>
-            <tr><td>용도</td><td>Retrofit처럼 외부 라이브러리 타입을 직접 만들어야 할 때</td><td>인터페이스 ↔ 구현체 매핑</td></tr>
-          </tbody>
-        </table>
-        <p><code>@Binds</code>가 가벼운 이유: 구현체(<code>AuthRepositoryImpl</code>)가 <code>@Inject constructor</code>로 이미 자기 Factory를 갖고 있으므로, <code>@Binds</code>는 "인터페이스 요청이 오면 이 Factory를 그대로 써라"는 매핑 정보만 남긴다. <code>@Provides</code>처럼 별도 Factory 클래스가 생성되지 않고, 모듈 메서드를 거치는 호출 단계도 없다.</p>
-        <pre><code>interface AuthRepository { fun login(): Boolean }
-class AuthRepositoryImpl @Inject constructor(
-    private val api: ApiService
-) : AuthRepository { override fun login() = true }
-
-@Module
-@InstallIn(SingletonComponent::class)
-abstract class RepositoryModule {          // @Binds만 → abstract class
-    @Binds
-    abstract fun bindAuthRepository(impl: AuthRepositoryImpl): AuthRepository
-}</code></pre>
-        <p><code>@Provides</code>와 <code>@Binds</code>를 한 모듈에 섞으려면, 본문 있는 <code>@Provides</code>는 <code>companion object</code>로 빼야 한다 (추상 클래스는 인스턴스화가 안 되므로):</p>
-        <pre><code>@Module
-@InstallIn(SingletonComponent::class)
-abstract class MixedModule {
-    @Binds
-    abstract fun bindAuthRepository(impl: AuthRepositoryImpl): AuthRepository
-
-    companion object {
-        @Provides
-        @Singleton
-        fun provideRetrofit(): Retrofit = Retrofit.Builder().build()
-    }
-}</code></pre>
-
-        <h2>7. 실무 고려사항</h2>
-        <ul>
-          <li><strong>Dagger와의 관계</strong>: Hilt는 Dagger 위에 얹힌 것 — Dagger의 보일러플레이트(Component 인터페이스 직접 작성 등)를 표준 규약으로 대체. 세밀한 커스텀 그래프가 필요하면 여전히 Dagger 개념(Component, Scope)을 알아야 함</li>
-          <li><strong>Koin과 차이</strong>: Koin은 런타임 Kotlin DSL, Hilt는 컴파일 타임 코드 생성(<a class="wikilink" href="#annotation-processor">Annotation Processor</a> 기반) → Hilt가 런타임 오버헤드는 적지만 빌드 시간이 늘어나고 어노테이션 문법을 배워야 함</li>
-          <li><strong>kapt vs KSP</strong>: Hilt도 최신 버전은 <a class="wikilink" href="#annotation-processor">Annotation Processor</a>의 KSP 방식을 지원해 kapt보다 빌드 속도가 빠름</li>
-          <li><strong>자주 하는 실수</strong>: <code>@AndroidEntryPoint</code> 누락, Module에 <code>@InstallIn</code> 누락, 인터페이스에 <code>@Binds</code> 대신 구현체를 직접 주입하려다 순환 참조 발생</li>
-          <li><strong>테스트</strong>: <code>@HiltAndroidTest</code> + <code>HiltTestApplication</code>으로 테스트용 DI 그래프 구성, <code>@BindValue</code>나 테스트 전용 Module로 Mock 교체 가능</li>
-        </ul>
-
-        <h2>8. 관련 문서</h2>
-        <ul>
-          <li><a class="wikilink" href="#annotation-processor">Annotation Processor</a> — Hilt가 <code>@Inject</code>/<code>@Module</code>을 읽어 DI 코드를 생성하는 데 쓰는 컴파일 타임 도구</li>
         </ul>
       </div>
     </section>
@@ -1283,6 +1078,216 @@ binding.user = User("철수")</code></pre>
       </div>
     </section>
 
+    <section id="hilt" class="note-section">
+      <div class="note-header">
+        <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">Hilt</span></div>
+        <h1>Hilt</h1>
+        <div class="note-meta">
+          <span>수정일 2026-09-19</span>
+          <span class="read-time"></span>
+          <span><span class="tag">android</span><span class="tag">di</span><span class="tag">dependency-injection</span><span class="tag">hilt</span><span class="tag">dagger</span><span class="tag">kotlin</span></span>
+        </div>
+      </div>
+      <div class="note-body">
+        <h2>1. 정의</h2>
+        <ul>
+          <li>Android 공식 <strong>의존성 주입(Dependency Injection) 프레임워크</strong></li>
+          <li>Dagger를 기반으로 하되, Android 생명주기(Application/Activity/Fragment/ViewModel 등)에 맞춘 <strong>표준 컴포넌트 계층</strong>을 미리 만들어줘서 설정 보일러플레이트를 줄인 레이어</li>
+          <li>컴파일 타임에 <a class="wikilink" href="#annotation-processor">Annotation Processor</a>(kapt/KSP)가 DI 코드를 생성 → 런타임 리플렉션 방식(Koin 등)과 달리 오류를 빌드 시점에 잡음</li>
+        </ul>
+
+        <h2>2. 목적 (AS-IS / TO-BE)</h2>
+        <p><strong>AS-IS (DI 없이)</strong></p>
+        <ul>
+          <li>클래스 안에서 의존 객체를 직접 <code>new</code>(생성) → 강결합</li>
+          <li>테스트 시 Mock으로 교체하기 어려움</li>
+          <li>싱글톤을 직접 관리(static, 전역 객체)하다 생명주기 버그 발생</li>
+        </ul>
+        <p><strong>TO-BE (Hilt 도입 후)</strong></p>
+        <ul>
+          <li>필요한 타입을 생성자/필드에 요청만 하면 Hilt가 생성 로직을 대신 처리</li>
+          <li>생성 로직과 사용 로직 분리 → 테스트 시 가짜 구현체로 쉽게 교체</li>
+          <li>객체의 생명주기(앱 전체 싱글톤 vs 화면별 인스턴스)를 Hilt가 자동 관리</li>
+        </ul>
+
+        <h2>3. 핵심 어노테이션</h2>
+        <ul>
+          <li><strong><code>@HiltAndroidApp</code></strong>: Application 클래스에 부착. 앱 최상위 컨테이너 (<code>SingletonComponent</code>)를 생성하는 진입점</li>
+          <li><strong><code>@AndroidEntryPoint</code></strong>: Activity/Fragment/Service/BroadcastReceiver 등에 부착. 해당 컴포넌트가 Hilt로부터 주입받을 수 있게 함</li>
+          <li><strong><code>@Inject</code></strong>
+            <ul>
+              <li>생성자에 붙이면 → "이 클래스를 어떻게 만드는지" Hilt가 자동으로 앎 (Module 불필요)</li>
+              <li>필드에 붙이면 → "이 필드를 채워달라"는 요청</li>
+            </ul>
+          </li>
+          <li><strong><code>@Module</code> + <code>@InstallIn</code></strong>: 인터페이스처럼 직접 <code>@Inject</code> 생성자를 못 붙이는 타입의 생성 레시피를 정의. <code>@InstallIn</code>으로 어느 컴포넌트에 등록할지 지정</li>
+        </ul>
+        <pre><code>@HiltAndroidApp
+class MyApp : Application()
+
+class ApiService @Inject constructor()
+class UserRepository @Inject constructor(private val api: ApiService)
+
+@HiltViewModel
+class UserViewModel @Inject constructor(private val repo: UserRepository) : ViewModel()
+
+@AndroidEntryPoint
+class MainActivity : AppCompatActivity() {
+    private val viewModel: UserViewModel by viewModels()
+    // MainActivity → UserViewModel 요청 → UserRepository 필요
+    // → ApiService 필요 → 순서대로 자동 생성/주입
+}</code></pre>
+
+        <h2>4. 컴포넌트 계층</h2>
+        <p><strong>컴포넌트(Component)</strong>: 안드로이드 생명주기에 맞춰 의존성 객체를 생성하고 관리하는 DI 컨테이너</p>
+        <p>구체적으로는:</p>
+        <ul>
+          <li>자신에게 등록된 타입마다 <strong>생성 메서드</strong>가 코드로 박혀 있음</li>
+          <li>스코프가 붙은 타입은 그 메서드가 <strong>이미 만든 인스턴스를 캐싱</strong>해뒀다가 반환, 스코프 없는 타입은 매번 새로 생성</li>
+          <li>이 컨테이너의 인스턴스 자체가 <strong>생명주기 시작 시 생성, 끝나면 소멸</strong> (Activity 죽으면 그 컨테이너와 캐싱된 값도 함께 사라짐)</li>
+        </ul>
+        <pre><code>// Dagger가 실제로 생성하는 코드를 단순화하면 대략 이런 모양
+class DaggerSingletonC : SingletonComponent {
+    // 스코프 있는 타입 → 캐싱하는 Provider로 감싸서 필드에 보관
+    private val retrofitProvider = DoubleCheck.provider(NetworkModule_ProvideRetrofitFactory.create())
+    override fun getRetrofit(): Retrofit = retrofitProvider.get()   // 두 번째 호출부터 캐시 반환
+
+    // 스코프 없는 타입 → 캐싱 없이 매번 생성 로직 그대로 호출
+    override fun getApiService(): ApiService = ApiService_Factory.create().get()
+}</code></pre>
+        <p>자식 컴포넌트는 부모에게 위임해서 찾을 수 있지만(안→밖), 부모는 자식을 모른다(한 방향).</p>
+        <pre><code>[App 프로세스 시작] → @HiltAndroidApp.onCreate()
+        ▼
+SingletonComponent          ◀── 최상위 컨테이너, 앱 종료까지 유지
+        ▼
+ActivityRetainedComponent → ActivityComponent → FragmentComponent ...
+        ▼
+ViewModelComponent</code></pre>
+        <table>
+          <thead><tr><th>컴포넌트</th><th>짝이 되는 스코프</th><th>생명주기</th></tr></thead>
+          <tbody>
+            <tr><td><code>SingletonComponent</code></td><td><code>@Singleton</code></td><td>Application</td></tr>
+            <tr><td><code>ActivityRetainedComponent</code></td><td><code>@ActivityRetainedScoped</code></td><td>ViewModelStore (화면 회전 생존)</td></tr>
+            <tr><td><code>ActivityComponent</code></td><td><code>@ActivityScoped</code></td><td>Activity 인스턴스</td></tr>
+            <tr><td><code>ViewModelComponent</code></td><td><code>@ViewModelScoped</code></td><td>ViewModel</td></tr>
+            <tr><td><code>FragmentComponent</code></td><td><code>@FragmentScoped</code></td><td>Fragment 인스턴스</td></tr>
+          </tbody>
+        </table>
+
+        <h3>4-1. SingletonComponent</h3>
+        <ul>
+          <li>앱 생명주기 전체 동안 유지되는 최상위 컨테이너</li>
+          <li><strong>특징</strong>
+            <ul>
+              <li>여기 등록된 타입은 앱이 종료될 때까지 존재할 수 있는 <strong>최대 범위</strong>를 가짐 (컴포넌트 = 어디까지 살 수 있는지의 한도)</li>
+              <li>등록만으로 인스턴스가 하나로 캐싱되는 건 아님 — 하나만 만들어 재사용 하려면 <code>@Singleton</code> 스코프를 <strong>추가로</strong> 붙여야 함 (5번 섹션 참고)</li>
+            </ul>
+          </li>
+          <li><strong>사용 상황</strong>: Retrofit, Room DB, OkHttpClient처럼 앱 전역에서 하나만 있어야 하는 객체 → <code>@InstallIn(SingletonComponent::class)</code> + <code>@Singleton</code>을 함께 사용</li>
+        </ul>
+        <pre><code>@Module
+@InstallIn(SingletonComponent::class)
+object NetworkModule {
+    @Provides
+    @Singleton
+    fun provideRetrofit(): Retrofit =
+        Retrofit.Builder().baseUrl("https://api.example.com/").build()
+}</code></pre>
+
+        <h3>4-2. ActivityComponent vs ActivityRetainedComponent</h3>
+        <ul>
+          <li>한 줄 정의: 둘 다 Activity 관련 컴포넌트지만 <strong>무엇에 묶여 있는지</strong>가 다름</li>
+          <li><strong>특징</strong>
+            <ul>
+              <li><code>ActivityComponent</code> → Activity <strong>인스턴스</strong>에 묶임</li>
+              <li><code>ActivityRetainedComponent</code> → <code>ViewModelStore</code>(회전 시 Android가 유지해주는 저장소)에 묶임</li>
+            </ul>
+          </li>
+          <li><strong>사용 상황</strong>: 화면 회전 시 데이터를 유지해야 하면 <code>ActivityRetainedComponent</code> (또는 <code>ViewModelComponent</code>), 화면 인스턴스와 함께 사라져도 되면 <code>ActivityComponent</code></li>
+        </ul>
+        <pre><code>[Activity 생성]      → ActivityComponent 생성      → @Inject 필드 채움
+        │
+        ▼ 화면 회전
+[Activity 소멸]       → ActivityComponent도 함께 소멸
+                         (@ActivityScoped 캐시도 같이 GC 대상)
+[새 Activity 생성]     → 새 ActivityComponent 생성   → 처음부터 다시 주입
+
+ActivityRetainedComponent는 이 회전 사이클과 무관하게 유지됨
+→ @HiltViewModel과 그 의존성이 회전해도 살아있는 이유</code></pre>
+        <pre><code>@HiltViewModel
+class UserViewModel @Inject constructor(
+    private val repo: UserRepository   // ActivityRetainedComponent 소속
+) : ViewModel()
+// 화면 회전해도 이 ViewModel 인스턴스와 repo는 그대로 유지됨</code></pre>
+
+        <h2>5. 컴포넌트(어디에) vs 스코프(캐싱할지)</h2>
+        <ul>
+          <li><strong>컴포넌트(<code>@InstallIn</code>)</strong>: 이 레시피가 어느 상자에 등록되는지 → 인스턴스가 <strong>최대 얼마나 오래 살 수 있는지</strong>의 한도만 정함</li>
+          <li><strong>스코프(<code>@Singleton</code> 등)</strong>: 그 상자 안에서 인스턴스를 캐싱해서 재사용할지 여부 → 이게 없으면 매번 새 인스턴스 생성</li>
+        </ul>
+        <pre><code>@Provides                    // @Singleton 없음 → 요청마다 새 Retrofit 생성
+fun provideRetrofit(): Retrofit = ...
+
+@Provides @Singleton         // 최초 1번만 생성, 이후 캐시 재사용
+fun provideRetrofit(): Retrofit = ...</code></pre>
+        <ul>
+          <li><strong>스코프는 자기 컴포넌트 것만 허용</strong>: <code>SingletonComponent</code>에 <code>@ActivityScoped</code>를 붙이면 컴파일 에러(<code>does not accept @ActivityScoped bindings</code>) → 한 바인딩당 선택지는 "언스코프드" 또는 "그 컴포넌트 고유 스코프" 둘 중 하나뿐 (<code>@DefineComponent</code>로 직접 컴포넌트를 정의하는 고급 케이스는 예외)</li>
+        </ul>
+
+        <h2>6. <code>@Provides</code> vs <code>@Binds</code></h2>
+        <table>
+          <thead><tr><th></th><th><code>@Provides</code></th><th><code>@Binds</code></th></tr></thead>
+          <tbody>
+            <tr><td>형태</td><td>본문 있는 메서드 (직접 생성)</td><td>본문 없는 추상 메서드 (타입 매핑만)</td></tr>
+            <tr><td>생성되는 Factory</td><td>전용 Factory 새로 생성</td><td>없음 — 구현체의 기존 Factory 재사용</td></tr>
+            <tr><td>호출 경로</td><td><code>Factory.get()</code> → <code>Module.provideX()</code> 호출 → 생성 (3단계)</td><td><code>Factory.get()</code> → 생성 (2단계)</td></tr>
+            <tr><td>선언 타입</td><td><code>object</code></td><td><code>interface</code> 또는 <code>abstract class</code></td></tr>
+            <tr><td>용도</td><td>Retrofit처럼 외부 라이브러리 타입을 직접 만들어야 할 때</td><td>인터페이스 ↔ 구현체 매핑</td></tr>
+          </tbody>
+        </table>
+        <p><code>@Binds</code>가 가벼운 이유: 구현체(<code>AuthRepositoryImpl</code>)가 <code>@Inject constructor</code>로 이미 자기 Factory를 갖고 있으므로, <code>@Binds</code>는 "인터페이스 요청이 오면 이 Factory를 그대로 써라"는 매핑 정보만 남긴다. <code>@Provides</code>처럼 별도 Factory 클래스가 생성되지 않고, 모듈 메서드를 거치는 호출 단계도 없다.</p>
+        <pre><code>interface AuthRepository { fun login(): Boolean }
+class AuthRepositoryImpl @Inject constructor(
+    private val api: ApiService
+) : AuthRepository { override fun login() = true }
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class RepositoryModule {          // @Binds만 → abstract class
+    @Binds
+    abstract fun bindAuthRepository(impl: AuthRepositoryImpl): AuthRepository
+}</code></pre>
+        <p><code>@Provides</code>와 <code>@Binds</code>를 한 모듈에 섞으려면, 본문 있는 <code>@Provides</code>는 <code>companion object</code>로 빼야 한다 (추상 클래스는 인스턴스화가 안 되므로):</p>
+        <pre><code>@Module
+@InstallIn(SingletonComponent::class)
+abstract class MixedModule {
+    @Binds
+    abstract fun bindAuthRepository(impl: AuthRepositoryImpl): AuthRepository
+
+    companion object {
+        @Provides
+        @Singleton
+        fun provideRetrofit(): Retrofit = Retrofit.Builder().build()
+    }
+}</code></pre>
+
+        <h2>7. 실무 고려사항</h2>
+        <ul>
+          <li><strong>Dagger와의 관계</strong>: Hilt는 Dagger 위에 얹힌 것 — Dagger의 보일러플레이트 (Component 인터페이스 직접 작성 등)를 표준 규약으로 대체. 세밀한 커스텀 그래프가 필요하면 여전히 Dagger 개념(Component, Scope)을 알아야 함</li>
+          <li><strong>Koin과 차이</strong>: Koin은 런타임 Kotlin DSL, Hilt는 컴파일 타임 코드 생성 (<a class="wikilink" href="#annotation-processor">Annotation Processor</a> 기반) → Hilt가 런타임 오버헤드는 적지만 빌드 시간이 늘어나고 어노테이션 문법을 배워야 함</li>
+          <li><strong>kapt vs KSP</strong>: Hilt도 최신 버전은 <a class="wikilink" href="#annotation-processor">Annotation Processor</a>의 KSP 방식을 지원해 kapt보다 빌드 속도가 빠름</li>
+          <li><strong>자주 하는 실수</strong>: <code>@AndroidEntryPoint</code> 누락, Module에 <code>@InstallIn</code> 누락, 인터페이스에 <code>@Binds</code> 대신 구현체를 직접 주입하려다 순환 참조 발생</li>
+          <li><strong>테스트</strong>: <code>@HiltAndroidTest</code> + <code>HiltTestApplication</code>으로 테스트용 DI 그래프 구성, <code>@BindValue</code>나 테스트 전용 Module로 Mock 교체 가능</li>
+        </ul>
+
+        <h2>8. 관련 문서</h2>
+        <ul>
+          <li><a class="wikilink" href="#annotation-processor">Annotation Processor</a> — Hilt가 <code>@Inject</code>/<code>@Module</code>을 읽어 DI 코드를 생성하는 데 쓰는 컴파일 타임 도구</li>
+          <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — <code>hiltViewModel(parent)</code>로 중첩 그래프 스코프 ViewModel을 주입하는 조합</li>
+        </ul>
+      </div>
+    </section>
+
     <section id="live-data" class="note-section">
       <div class="note-header">
         <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">LiveData</span></div>
@@ -1350,19 +1355,19 @@ protected void setValue(T value) {
 }</code></pre>
         <ol>
           <li><code>postValue(x)</code> → <code>mDataLock</code>으로 감싸서 <code>mPendingData</code>에 값만 기록</li>
-          <li>이미 대기 중인 Runnable이 없을 때만(<code>mPendingData == NOT_SET</code>이었을 때만) 메인 스레드로 Runnable을 post</li>
+          <li><strong>이미 대기 중인 Runnable이 없을 때만</strong>(<code>mPendingData == NOT_SET</code>이었을 때만) 메인 스레드로 Runnable을 post</li>
           <li>메인 스레드에서 Runnable 실행 → <code>mPendingData</code>를 꺼내 <code>setValue()</code> 호출 → 실제 반영 + 옵저버 통지</li>
         </ol>
         <p>핵심은 2번 — "여러 번 <code>postValue</code> 호출 = 여러 번 반영"이 아님. Runnable이 아직 메인 스레드 큐에서 대기 중이면 새 Runnable을 또 post하지 않고 <code>mPendingData</code>만 최신값으로 덮어씀 → <strong>중간 값들은 유실되고 마지막 값만 반영</strong>됨.</p>
 
         <h2>4. postValue 오남용으로 생기는 문제</h2>
 
-        <h3>4-1 백그라운드 스레드에서 setValue(.value =) 호출 → IllegalStateException</h3>
+        <h3>4-1 백그라운드 스레드에서 <code>setValue</code>(<code>.value =</code>) 호출 → <code>IllegalStateException</code></h3>
         <pre><code>Thread { _count.value = 10 }.start()
 // IllegalStateException: Cannot invoke setValue on a background thread</code></pre>
         <p><code>setValue</code>는 <code>assertMainThread()</code>로 막혀 있지만 <code>postValue</code>는 이 체크가 없음 — 차이를 모르고 백그라운드에서 <code>.value =</code>를 그대로 쓰면 터짐.</p>
 
-        <h3>4-2 연속 postValue 호출 시 중간 값 유실 (가장 흔한 버그, 예외는 아님)</h3>
+        <h3>4-2 연속 <code>postValue</code> 호출 시 중간 값 유실 (가장 흔한 버그, 예외는 아님)</h3>
         <pre><code>viewModelScope.launch(Dispatchers.IO) {
     for (i in 1..100) {
         _progress.postValue(i)   // 메인 스레드가 바쁘면 1~99는 씹히고 100만 반영될 수 있음
@@ -1370,22 +1375,22 @@ protected void setValue(T value) {
 }</code></pre>
         <p>진행률 표시줄처럼 모든 중간값이 UI에 다 찍혀야 하는 케이스에서 특히 문제 — 구조상 보장 안 됨.</p>
 
-        <h3>4-3 postValue 직후 같은 스레드에서 value 즉시 읽기 → 옛날 값</h3>
+        <h3>4-3 <code>postValue</code> 직후 같은 스레드에서 <code>value</code> 즉시 읽기 → 옛날 값</h3>
         <pre><code>_count.postValue(5)
 val current = _count.value   // 메인 스레드 Runnable이 아직 안 돌았으면 5가 아님</code></pre>
         <p>비동기 반영을 동기처럼 착각해서 바로 다음 줄에서 읽으면 race condition 버그로 이어짐.</p>
 
-        <h3>4-4 초기값 없이 생성 후 value!! → NullPointerException</h3>
+        <h3>4-4 초기값 없이 생성 후 <code>value!!</code> → <code>NullPointerException</code></h3>
         <pre><code>private val _count = MutableLiveData&lt;Int&gt;()   // 초기값 없음 → value는 null
 fun increment() { _count.value = _count.value!! + 1 }   // 첫 호출에서 NPE</code></pre>
         <p><code>MutableLiveData(0)</code>처럼 초깃값을 명시하거나 널 처리가 필요.</p>
 
-        <h3>4-5 여러 스레드에서 동시에 postValue 남발 → 반영 순서 보장 없음</h3>
+        <h3>4-5 여러 스레드에서 동시에 <code>postValue</code> 남발 → 반영 순서 보장 없음</h3>
         <p><code>mPendingData</code>가 마지막에 쓴 스레드의 값으로 덮어써지므로, 여러 백그라운드 스레드가 경쟁적으로 <code>postValue</code>를 부르면 최종 반영되는 값이 호출 순서와 무관하게 타이밍에 좌우됨.</p>
 
         <h2>5. 실무 고려사항</h2>
         <ul>
-          <li><strong>StateFlow로 옮겨가는 추세</strong>: Compose가 주류가 되면서 Coroutine 기반 <code>StateFlow</code>/<code>SharedFlow</code>가 대체재로 많이 쓰임 — LiveData는 View 시스템(XML) 중심 프로젝트에서 여전히 흔함</li>
+          <li><strong>StateFlow로 옮겨가는 추세</strong>: Compose가 주류가 되면서 Coroutine 기반 <code>StateFlow</code>/<code>SharedFlow</code>가 대체재로 많이 쓰임 — LiveData는 View 시스템 (XML) 중심 프로젝트에서 여전히 흔함</li>
           <li><strong><code>ViewModel</code> + <code>SavedStateHandle</code>과 조합</strong>: 화면 회전 등으로 재생성돼도 <code>ViewModel</code>이 살아있으므로 LiveData 값도 유지됨</li>
           <li><strong>단일 이벤트 문제</strong>: "현재 상태"를 표현하기엔 좋지만, 토스트 메시지처럼 "한 번만 소비돼야 하는 이벤트"엔 부적합 — 재구독 시 과거 이벤트가 다시 발생함. <code>SingleLiveEvent</code>/<code>Channel</code> 같은 우회가 필요</li>
         </ul>
@@ -1494,13 +1499,13 @@ fun increment() { _count.value = _count.value!! + 1 }   // 첫 호출에서 NPE<
         <p>SharedPreferences처럼 key-value 방식</p>
         <ul>
           <li><strong>특징</strong>: 스키마 정의 없이 <code>stringPreferencesKey("name")</code>처럼 키 타입만 지정해서 바로 사용</li>
-          <li><strong>단점</strong>: 타입은 키 단위로 안전하지만, "이 앱에 어떤 키가 있는지" 전체를 강제하는 중앙 스키마가 없음 — 다른 곳에서 같은 이름으로 다른 타입의 키(<code>intPreferencesKey("age")</code> vs <code>stringPreferencesKey("age")</code>)를 실수로 새로 만들면 같은 파일 슬롯을 다른 타입으로 건드려 충돌</li>
+          <li><strong>단점</strong>: 타입은 키 단위로 안전하지만, "이 앱에 어떤 키가 있는지" 전체를 강제하는 중앙 스키마가 없음 — 다른 곳에서 같은 이름으로 다른 타입의 키 (<code>intPreferencesKey("age")</code> vs <code>stringPreferencesKey("age")</code>)를 실수로 새로 만들면 같은 파일 슬롯을 다른 타입으로 건드려 충돌</li>
         </ul>
         <pre><code>val Context.dataStore by preferencesDataStore(name = "settings")
 val NAME_KEY = stringPreferencesKey("name")
 
 suspend fun saveName(context: Context, name: String) {
-    context.dataStore.edit { prefs -> prefs[NAME_KEY] = name }
+    context.dataStore.edit { prefs -&gt; prefs[NAME_KEY] = name }
 }
 
 val nameFlow: Flow&lt;String?&gt; = context.dataStore.data.map { it[NAME_KEY] }</code></pre>
@@ -1529,7 +1534,7 @@ val Context.settingsDataStore: DataStore&lt;Settings&gt; by dataStore(
 )
 
 suspend fun updateAge(context: Context, newAge: Int) {
-    context.settingsDataStore.updateData { current -> current.toBuilder().setAge(newAge).build() }
+    context.settingsDataStore.updateData { current -&gt; current.toBuilder().setAge(newAge).build() }
 }
 
 val settingsFlow: Flow&lt;Settings&gt; = context.settingsDataStore.data</code></pre>
@@ -1585,7 +1590,7 @@ coroutineScope { repeat(100) { launch { increment(dataStore) } } }</code></pre>
 
         <h2>5. 내부 동작 — 파일 저장 방식</h2>
         <ul>
-          <li>두 종류 다 결국 앱 전용 저장소의 평범한 파일에 저장됨(<code>/data/data/&lt;패키지&gt;/files/datastore/...</code>) — 이 자체는 SharedPreferences와 다를 게 없음</li>
+          <li>두 종류 다 결국 앱 전용 저장소의 평범한 파일에 저장됨 (<code>/data/data/&lt;패키지&gt;/files/datastore/...</code>) — 이 자체는 SharedPreferences와 다를 게 없음</li>
           <li>차이는 <strong>누가 스키마를 정의하냐</strong>: 둘 다 내부적으로 Protocol Buffers 포맷을 쓰지만, Preferences DataStore는 라이브러리가 미리 만들어둔 <strong>범용 스키마</strong>("이름-값 쌍의 목록")를 쓰고, Proto DataStore는 개발자가 직접 정의한 <strong>전용 스키마</strong>를 씀</li>
           <li>쓰기는 "새 상태를 임시 파일에 먼저 쓰고, 다 쓰면 원본 파일 자리에 원자적(atomic) rename으로 교체"하는 방식 — rename은 "성공 아니면 아예 안 일어남"만 가능한 연산이라 프로세스가 어느 타이밍에 죽든 결과는 "쓰기 전 옛날 값" 아니면 "쓰기 완료된 새 값" 둘 중 하나뿐</li>
         </ul>
@@ -1619,7 +1624,7 @@ coroutineScope { repeat(100) { launch { increment(dataStore) } } }</code></pre>
         <h2>2. 핵심 개념</h2>
         <ul>
           <li><strong>File URI</strong>: 파일 시스템 경로를 그대로 가리킴 — 파일이 그 자리에 실제로 존재해야 하고, 접근하려면 그 경로 자체에 대한 파일 권한이 필요</li>
-          <li><strong>Content URI</strong>: <code>ContentProvider</code>를 거쳐야만 접근 가능한 추상화된 URI — 실제 파일 경로를 노출하지 않고, 반드시 실제 파일과 1:1 대응할 필요도 없음(DB 행, 실시간으로 계산되는 이미지도 content URI로 표현 가능)</li>
+          <li><strong>Content URI</strong>: <code>ContentProvider</code>를 거쳐야만 접근 가능한 추상화된 URI — 실제 파일 경로를 노출하지 않고, 반드시 실제 파일과 1:1 대응할 필요도 없음 (DB 행, 실시간으로 계산되는 이미지도 content URI로 표현 가능)</li>
         </ul>
 
         <h2>3. 두 가지 URI</h2>
@@ -1636,7 +1641,7 @@ coroutineScope { repeat(100) { launch { increment(dataStore) } } }</code></pre>
         <ul>
           <li><strong>특징</strong>: 요청이 오면 <code>ContentProvider</code>가 "이 요청을 허용할지, 어떤 바이트를 돌려줄지" 판단 — 실제 내부 저장소 구조는 전혀 노출 안 됨</li>
           <li><strong>사용 상황</strong>: 다른 앱과 파일을 공유하거나, <code>MediaStore</code>처럼 여러 앱이 공용으로 접근하는 미디어 자원을 다룰 때</li>
-          <li><strong>비유</strong>: File URI가 "책장 3번 칸 몇 번째 책"이라면, Content URI는 "사서한테 42번 책 달라고 요청하기" — 사서(<code>ContentProvider</code>)가 원본을 그대로 줄 수도, 요약본을 만들어줄 수도, 여러 책을 엮어서 줄 수도 있음. 요청하는 쪽은 그 안에서 무슨 일이 일어나는지 몰라도 됨(그래서 실제 파일 경로 노출도, 파일과의 1:1 대응도 필요 없음)</li>
+          <li><strong>비유</strong>: File URI가 "책장 3번 칸 몇 번째 책"이라면, Content URI는 "사서한테 42번 책 달라고 요청하기" — 사서(<code>ContentProvider</code>)가 원본을 그대로 줄 수도, 요약본을 만들어줄 수도, 여러 책을 엮어서 줄 수도 있음. 요청하는 쪽은 그 안에서 무슨 일이 일어나는지 몰라도 됨 (그래서 실제 파일 경로 노출도, 파일과의 1:1 대응도 필요 없음)</li>
         </ul>
         <pre><code>// Content URI는 항상 ContentResolver를 거쳐서 열어야 함
 val inputStream = contentResolver.openInputStream(uri)</code></pre>
@@ -1749,7 +1754,7 @@ override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) 
         <h2>5. 실무 고려사항</h2>
         <ul>
           <li><strong><code>ACTION_OPEN_DOCUMENT_TREE</code></strong>: 파일 하나가 아니라 폴더 전체(트리)에 대한 접근 권한을 받고 싶을 때 씀 (예: 파일 관리자 앱)</li>
-          <li><strong>FileProvider와의 차이</strong>: FileProvider는 "내 앱 파일을 남에게 공유"하는 용도, SAF는 반대로 "남의 파일(또는 사용자가 고른 아무 위치)을 내가 접근"하는 용도 — 방향이 반대</li>
+          <li><strong><code>FileProvider</code>와의 차이</strong>: <code>FileProvider</code>는 "내 앱 파일을 남에게 공유"하는 용도, SAF는 반대로 "남의 파일(또는 사용자가 고른 아무 위치)을 내가 접근"하는 용도 — 방향이 반대</li>
           <li><strong>Scoped Storage와의 관계</strong>: Android 10부터는 앱이 임의 경로로 다른 앱의 파일에 접근하는 길이 막히고, SAF(또는 미디어 파일이면 <code>MediaStore</code>)를 거치는 게 사실상 표준 경로가 됨 — SAF는 "선택적으로 쓸 수 있는 더 안전한 방법"이었다가, 이 시점부터 강제되는 기본 접근 경로에 가까워짐</li>
         </ul>
 
@@ -1840,10 +1845,12 @@ startActivity(intent) // 시스템이 설치된 브라우저 중 골라서(혹�
 
         <h2>7. 관련 문서</h2>
         <ul>
+          <li><a class="wikilink" href="#android-manifest">AndroidManifest</a> — intent-filter가 설치 시점에 등록되는 레지스트리, <code>exported</code>와 인텐트 해석 흐름</li>
           <li><a class="wikilink" href="#task">Task</a> — Intent로 시작된 Activity가 BackStack에 쌓이는 구조</li>
           <li><a class="wikilink" href="#activity-launch-mode">Activity LaunchMode</a> — 같은 Intent라도 launchMode에 따라 기존 인스턴스 재사용 여부가 달라짐</li>
           <li><a class="wikilink" href="#bundle">Bundle</a> — Intent의 extras에 담기는 데이터 구조</li>
           <li><a class="wikilink" href="#file-uri-vs-content-uri">File URI vs Content URI</a> — Intent에 파일을 실어 보낼 때 file URI 대신 content URI + 권한 플래그를 쓰는 이유</li>
+          <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 딥링크가 <code>ACTION_VIEW</code> Intent로 도착하고, 알림 PendingIntent로 특정 목적지를 여는 경로</li>
         </ul>
       </div>
     </section>
@@ -1956,6 +1963,468 @@ startActivity(Intent(this, DetailActivity::class.java))</code></pre>
         <ul>
           <li><a class="wikilink" href="#intent">Intent</a> — 매니페스트의 <code>&lt;intent-filter&gt;</code>가 실제로 매칭되는 대상</li>
           <li><a class="wikilink" href="#file-uri-vs-content-uri">File URI vs Content URI</a> — 외부 앱과 파일을 공유할 때 exported된 Provider가 관여하는 사례</li>
+          <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 딥링크 <code>&lt;intent-filter&gt;</code> 등록과 <code>&lt;nav-graph&gt;</code> 빌드 시 확장이 일어나는 지점</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="jetpack-navigation" class="note-section">
+      <div class="note-header">
+        <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">Jetpack Navigation</span></div>
+        <h1>Jetpack Navigation</h1>
+        <div class="note-meta">
+          <span>수정일 2026-09-27</span>
+          <span class="read-time"></span>
+          <span><span class="tag">android</span><span class="tag">jetpack</span><span class="tag">navigation</span><span class="tag">navcontroller</span><span class="tag">navhost</span><span class="tag">navgraph</span><span class="tag">deeplink</span><span class="tag">type-safe-route</span><span class="tag">compose</span></span>
+        </div>
+      </div>
+      <div class="note-body">
+        <h2>1. 정의</h2>
+        <ul>
+          <li>앱의 화면 이동과 백스택을 프레임워크가 관리해주는 Jetpack 라이브러리</li>
+          <li>화면 간 연결을 <strong>네비게이션 그래프</strong>로 선언 → 이동/뒤로가기/인자 전달/딥링크를 라이브러리가 처리</li>
+          <li>전제는 <strong>Single Activity 아키텍처</strong>: Activity 하나가 껍데기, 내부 화면은 Fragment 또는 Composable로 두고 Navigation이 교체</li>
+        </ul>
+
+        <h2>2. 목적 (AS-IS / TO-BE)</h2>
+
+        <h3>AS-IS — 수동 FragmentTransaction</h3>
+        <ul>
+          <li><code>beginTransaction().replace().addToBackStack().commit()</code>를 화면마다 직접 작성</li>
+          <li>백스택 상태를 개발자가 추적 → 뒤로가기 동작이 화면마다 제각각</li>
+          <li>인자 전달은 <code>Bundle</code> + 문자열 키 → 키/타입 오타가 런타임에야 드러남</li>
+          <li>딥링크는 Activity별 인텐트 필터 + URI 수동 파싱 + 백스택 수동 조립</li>
+        </ul>
+
+        <h3>TO-BE — 선언형 그래프</h3>
+        <ul>
+          <li>앱의 이동 구조가 그래프 한 곳에 모임 → 화면 목록과 연결을 한눈에</li>
+          <li>push/pop, 시스템 back, 업 버튼 처리가 일관되게 라이브러리 담당</li>
+          <li>인자가 컴파일 타임에 검증됨 (Safe Args / type-safe route)</li>
+          <li>딥링크를 목적지 선언 옆에 한 줄로 붙이고, 합성 백스택은 자동 구성</li>
+        </ul>
+
+        <h2>3. 핵심 개념</h2>
+        <ul>
+          <li><strong>NavGraph</strong>: 목적지(destination)와 그 사이 연결을 담은 그래프. XML(<code>res/navigation/</code>) 또는 Kotlin으로 선언</li>
+          <li><strong>NavHost</strong>: 현재 목적지가 실제로 그려지는 <strong>빈 컨테이너</strong>. Fragment는 <code>NavHostFragment</code>, Compose는 <code>NavHost</code> 컴포저블</li>
+          <li><strong>NavController</strong>: 이동을 실행하고 <strong>백스택을 소유</strong>하는 객체 → <code>navigate()</code>, <code>popBackStack()</code>의 주체. NavHost 하나당 하나</li>
+          <li><strong>NavBackStackEntry</strong>: 백스택에 쌓인 항목 하나. 자체 <code>Lifecycle</code> + <code>ViewModelStore</code> + <code>SavedStateHandle</code>을 가짐 → 목적지별 상태/ViewModel 스코프의 단위</li>
+          <li><strong>그래프도 스택에 쌓인다</strong>: 백스택에는 목적지뿐 아니라 <code>NavGraph</code> 자신(루트 그래프, 중첩 그래프)도 entry로 올라감</li>
+        </ul>
+        <pre><code>Activity
+ └── NavHostFragment / NavHost      ← 화면이 교체되는 자리
+      └── NavController             ← 백스택 소유
+           ├── NavGraph             ← 목적지 + 연결 선언
+           └── backQueue: [ RootGraph ][ Home ][ Detail ]   ← 최상단만 화면에 보임</code></pre>
+        <ul>
+          <li>Activity 단위의 <a class="wikilink" href="#task">Task</a>/<a class="wikilink" href="#activity-launch-mode">Activity LaunchMode</a>가 풀던 문제를 Fragment/Composable 레벨에서 다시 푸는 장치</li>
+        </ul>
+
+        <h2>4. 실전 구성 예시</h2>
+
+        <h3>4-1 라우트 정의</h3>
+        <p>라우트 파일 하나가 "앱의 화면 목록" 역할</p>
+        <pre><code>// navigation/Route.kt
+@Serializable data object Home
+@Serializable data object Login
+@Serializable data object Cart
+
+// 기본값 없는 필드 → path 인자, 기본값 있는 필드 → query 인자
+@Serializable data class ProductDetail(val productId: Long, val from: String? = null)
+
+// 중첩 그래프 (주문 플로우)
+@Serializable data object CheckoutGraph
+@Serializable data object CheckoutAddress
+@Serializable data class CheckoutPayment(val addressId: Long)
+@Serializable data object CheckoutResult</code></pre>
+
+        <h3>4-2 NavHost 조립</h3>
+        <pre><code>@Composable
+fun AppNavHost(navController: NavHostController = rememberNavController()) {
+    NavHost(navController = navController, startDestination = Home) {
+
+        composable&lt;Home&gt; {
+            HomeRoute(
+                onProductClick = { id -&gt; navController.navigate(ProductDetail(id)) },
+                onCartClick = { navController.navigate(Cart) },
+            )
+        }
+
+        composable&lt;ProductDetail&gt;(
+            // 딥링크 URI 패턴도 같은 data class에서 생성됨
+            deepLinks = listOf(navDeepLink&lt;ProductDetail&gt;(basePath = "https://shop.example.com/product")),
+        ) {
+            ProductDetailRoute(          // 인자는 ViewModel이 직접 읽음 (4-3 참고)
+                onBack = { navController.popBackStack() },
+                onBuyNow = { navController.navigate(CheckoutGraph) },
+            )
+        }
+
+        composable&lt;Login&gt; {
+            LoginRoute(
+                onSuccess = {
+                    navController.popBackStack()   // 로그인 화면을 스택에서 제거하고 원래 화면으로
+                },
+            )
+        }
+
+        composable&lt;Cart&gt; {
+            CartRoute(onBack = { navController.popBackStack() })
+        }
+
+        checkoutGraph(navController)     // 중첩 그래프는 확장 함수로 분리 (4-4)
+    }
+}</code></pre>
+        <ul>
+          <li>NavHost가 커지면 <code>NavGraphBuilder</code> 확장 함수(feature 모듈별 <code>fun NavGraphBuilder.xxxGraph(...)</code>)로 쪼개는 게 실무 표준</li>
+        </ul>
+
+        <h3>4-3 화면은 NavController를 모르게</h3>
+        <ul>
+          <li>Composable에 <code>navController</code>를 넘기면 그 화면이 네비게이션에 결합 → 프리뷰/테스트/재사용 불가</li>
+          <li>이동은 <strong>람다로 위임</strong>하고 NavController는 NavHost에만 둔다</li>
+        </ul>
+        <pre><code>// Route 레이어: DI와 상태 수집만 담당
+@Composable
+fun ProductDetailRoute(
+    onBack: () -&gt; Unit,
+    onBuyNow: () -&gt; Unit,
+    viewModel: ProductDetailViewModel = hiltViewModel(),
+) {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    ProductDetailScreen(uiState = uiState, onBack = onBack, onBuyNow = onBuyNow)
+}
+
+// Screen 레이어: 순수 UI — 프리뷰 가능
+@Composable
+fun ProductDetailScreen(uiState: ProductDetailUiState, onBack: () -&gt; Unit, onBuyNow: () -&gt; Unit) { /* ... */ }</code></pre>
+        <p>인자는 컴포저블이 아니라 <strong>ViewModel에서 <code>SavedStateHandle</code>로 직접 복원</strong>하는 게 실무에서 더 흔함</p>
+        <pre><code>@HiltViewModel
+class ProductDetailViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    repository: ProductRepository,
+) : ViewModel() {
+
+    private val route: ProductDetail = savedStateHandle.toRoute()   // 타입 그대로 복원
+
+    val uiState = repository.observeProduct(route.productId)
+        .map(ProductDetailUiState::Success)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProductDetailUiState.Loading)
+}</code></pre>
+        <ul>
+          <li>인자를 컴포저블 파라미터로 내리지 않아도 되고, 프로세스 사망 후에도 같은 경로로 복원됨 → <a class="wikilink" href="#bundle">Bundle</a> 기반 <code>SavedStateHandle</code>이 그대로 동작</li>
+        </ul>
+
+        <h3>4-4 중첩 그래프 + 그래프 스코프 ViewModel</h3>
+        <ul>
+          <li>여러 화면이 하나의 플로우를 이루고 상태를 공유할 때(주문, 회원가입) 중첩 그래프로 묶음</li>
+          <li>ViewModel을 <strong>그래프 entry 스코프</strong>에 두면 플로우가 pop될 때 함께 정리됨</li>
+        </ul>
+        <pre><code>fun NavGraphBuilder.checkoutGraph(navController: NavController) {
+    navigation&lt;CheckoutGraph&gt;(startDestination = CheckoutAddress) {
+
+        composable&lt;CheckoutAddress&gt; { entry -&gt;
+            val vm = entry.sharedCheckoutViewModel(navController)
+            CheckoutAddressRoute(
+                viewModel = vm,
+                onNext = { addressId -&gt; navController.navigate(CheckoutPayment(addressId)) },
+            )
+        }
+
+        composable&lt;CheckoutPayment&gt; { entry -&gt;
+            val vm = entry.sharedCheckoutViewModel(navController)
+            CheckoutPaymentRoute(viewModel = vm, onDone = { navController.navigate(CheckoutResult) })
+        }
+
+        composable&lt;CheckoutResult&gt; {
+            CheckoutResultRoute(
+                onClose = { navController.popBackStack&lt;Home&gt;(inclusive = false) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun NavBackStackEntry.sharedCheckoutViewModel(navController: NavController): CheckoutViewModel {
+    val parent = remember(this) { navController.getBackStackEntry&lt;CheckoutGraph&gt;() }
+    return hiltViewModel(parent)     // Hilt가 아니면 viewModel(parent)
+}</code></pre>
+        <ul>
+          <li><code>getBackStackEntry&lt;CheckoutGraph&gt;()</code>는 그래프 entry를 <code>ViewModelStoreOwner</code>로 넘기는 것 → 세 화면이 같은 ViewModel 인스턴스를 공유</li>
+          <li>플로우 전체를 pop하면 그래프 entry도 사라지므로 <code>onCleared()</code>가 호출되어 임시 주문 상태가 남지 않음 → <a class="wikilink" href="#hilt">Hilt</a>의 <code>@HiltViewModel</code>과 그대로 조합됨</li>
+        </ul>
+
+        <h2>5. 백스택 제어</h2>
+        <p><code>navigate()</code>에 <code>NavOptions</code> 람다를 넘겨 스택을 조작</p>
+
+        <h3>5-1 popUpTo / inclusive</h3>
+        <p>이동 전에 지정 목적지까지 스택을 pop, <code>inclusive = true</code>면 그 목적지까지 포함</p>
+        <ul>
+          <li><strong>사용 상황</strong>: 로그인 성공 후 로그인 화면 제거, 온보딩 완료 후 온보딩 전체 제거</li>
+        </ul>
+        <pre><code>// 온보딩 종료 → 온보딩 그래프를 통째로 버리고 Home으로
+navController.navigate(Home) {
+    popUpTo&lt;OnboardingGraph&gt; { inclusive = true }
+}</code></pre>
+
+        <h3>5-2 launchSingleTop</h3>
+        <p>이미 스택 top이 그 목적지면 새로 쌓지 않고 재사용 → 중복 탭/빠른 연타 방지</p>
+        <ul>
+          <li><strong>주의</strong>: 판정 기준은 <strong><code>popUpTo</code>가 적용된 뒤의 top</strong></li>
+        </ul>
+        <pre><code>[ Root ][ Home ][ Login ]
+  popUpTo&lt;Login&gt; inclusive  →  [ Root ][ Home ]     ← top이 Home
+  launchSingleTop = true    →  Home 재사용 (중복 없음) ✅
+
+[ Root ][ Home ][ Cart ][ CheckoutGraph ]...[ CheckoutResult ]
+  popUpTo&lt;CheckoutGraph&gt; inclusive →  [ Root ][ Home ][ Cart ]   ← top이 Cart
+  launchSingleTop = true           →  Home이 top이 아니므로 무효
+  navigate(Home)                   →  [ Root ][ Home ][ Cart ][ Home ]  ← Home 중복 ❌</code></pre>
+        <ul>
+          <li>위 실패 케이스는 기존 Home으로 <strong>돌아가는</strong> 게 목적이므로 <code>navigate</code>가 아니라 pop을 써야 함</li>
+        </ul>
+        <pre><code>navController.popBackStack&lt;Home&gt;(inclusive = false)   // Home 위를 전부 제거, Home 인스턴스/상태 유지</code></pre>
+
+        <h3>5-3 saveState / restoreState</h3>
+        <p>바텀 네비게이션에서 탭을 전환해도 각 탭의 스택과 스크롤 위치를 보존</p>
+        <pre><code>fun NavController.navigateToTab(route: Any) = navigate(route) {
+    popUpTo(graph.findStartDestination().id) { saveState = true }
+    launchSingleTop = true
+    restoreState = true
+}
+
+// 선택된 탭 표시: 중첩 그래프까지 포함해 판정해야 함
+val entry by navController.currentBackStackEntryAsState()
+val selected = entry?.destination?.hierarchy?.any { it.hasRoute&lt;Home&gt;() } == true</code></pre>
+
+        <h3>5-4 결과 돌려받기와 previousBackStackEntry 함정</h3>
+        <p>이전 화면으로 값을 넘길 때 <code>previousBackStackEntry</code>의 <code>SavedStateHandle</code>을 쓰는 패턴</p>
+        <ul>
+          <li><code>previousBackStackEntry</code>는 <strong>호출하는 그 시점</strong>에 백스택을 위에서 훑어, top 하나를 버리고 그 아래에서 <strong><code>NavGraph</code>가 아닌 첫 entry</strong>를 반환</li>
+          <li>캐시된 값이 아니라 매번 계산되는 getter이며, <code>popUpTo</code>를 전혀 모름 → <strong>"pop 후 도착할 화면"이 아니다</strong></li>
+        </ul>
+        <pre><code>[ Root ][ Home ][ Cart ][ CheckoutGraph ][ CheckoutAddress ]
+                              ↑ NavGraph라 스킵         ↑ current
+previousBackStackEntry == Cart</code></pre>
+        <ul>
+          <li>여러 칸을 pop하면 방금 값을 쓴 entry가 함께 <code>DESTROYED</code>되어 <strong>값이 조용히 사라짐</strong> (크래시도 경고도 없음)</li>
+          <li>→ 한 칸 pop(<code>popBackStack()</code>)일 때만 안전. 여럿 pop할 때는 살아남을 목적지를 라우트로 명시</li>
+        </ul>
+        <pre><code>// ❌ 여러 칸 pop 시 값 유실
+navController.previousBackStackEntry?.savedStateHandle?.set("selected_address", id)
+navController.popBackStack&lt;Cart&gt;(inclusive = false)
+
+// ✅ 돌아갈 목적지를 직접 집는다
+navController.getBackStackEntry&lt;Cart&gt;().savedStateHandle["selected_address"] = id
+navController.popBackStack&lt;Cart&gt;(inclusive = false)</code></pre>
+        <p>수신 측은 <strong>한 번 읽고 지워야</strong> 함 (안 지우면 재방문 시 같은 값이 또 방출)</p>
+        <pre><code>val selected by entry.savedStateHandle
+    .getStateFlow&lt;Long?&gt;("selected_address", null)
+    .collectAsStateWithLifecycle()
+
+LaunchedEffect(selected) {
+    selected?.let { handle(it); entry.savedStateHandle["selected_address"] = null }
+}</code></pre>
+        <ul>
+          <li><code>getBackStackEntry&lt;T&gt;()</code>는 그 라우트가 스택에 없으면 <code>IllegalArgumentException</code> → 진입 경로가 여러 개인 화면이면 결과 전달 대신 공유 저장소/그래프 스코프 ViewModel로 값을 올리는 쪽이 안전</li>
+        </ul>
+
+        <h2>6. 타입 안전 라우트 (문자열 → @Serializable)</h2>
+
+        <h3>6-1 AS-IS — 문자열 route</h3>
+        <pre><code>object Routes {
+    const val DETAIL = "product/{productId}?from={from}"          // ① 패턴
+    fun detail(id: Long, from: String? = null) =                  // ② 이동용 문자열 조립
+        "product/$id" + (from?.let { "?from=${Uri.encode(it)}" } ?: "")
+}
+
+composable(
+    route = Routes.DETAIL,
+    arguments = listOf(                                            // ③ 인자 타입 수동 선언
+        navArgument("productId") { type = NavType.LongType },
+        navArgument("from") { type = NavType.StringType; nullable = true },
+    ),
+) { entry -&gt;
+    val id = entry.arguments?.getLong("productId") ?: 0L           // ④ 꺼낼 때도 수동
+}</code></pre>
+        <ul>
+          <li><strong>같은 정보가 4곳에 중복</strong> → 하나만 바꿔도 컴파일러가 안 잡아줌</li>
+          <li><strong>조용히 깨진다</strong>: <code>productId</code> → <code>id</code>로 리네임하며 ④를 놓치면 빌드는 성공하고 실행 시 <code>0</code>이 들어와 "항상 0번 상품을 연다"는 버그</li>
+          <li><strong>오타는 런타임 크래시</strong>: <code>navigation destination produc/42 is not found</code></li>
+          <li>타입이 전부 문자열로 소실, <code>Uri.encode</code> 누락 시 <code>/</code>·공백·한글에서 파싱 깨짐</li>
+          <li>필수/옵션/nullable이 타입에 안 드러나고, IDE 리네임이 문자열을 따라가지 못함</li>
+          <li>XML 그래프의 <strong>Safe Args</strong> 플러그인이 코드 생성으로 이걸 해결했지만 XML 전용 → Compose는 위 노동을 그대로 했음</li>
+        </ul>
+
+        <h3>6-2 TO-BE — @Serializable data class</h3>
+        <pre><code>@Serializable data class ProductDetail(val productId: Long, val from: String? = null)
+
+navController.navigate(ProductDetail(productId = 42, from = "push"))   // 생성자 호출
+val route = entry.toRoute&lt;ProductDetail&gt;()                             // 타입 그대로
+navController.popBackStack&lt;Home&gt;(inclusive = false)                    // 제네릭 API</code></pre>
+        <ul>
+          <li>인자 개수/타입 오류는 <strong>컴파일 에러</strong>, 리네임은 IDE 리팩토링으로 전파</li>
+          <li>인코딩·<code>NavType</code>·패턴 조립은 라이브러리 담당</li>
+        </ul>
+
+        <h3>6-3 왜 하필 @Serializable인가</h3>
+        <p>Navigation은 라우트를 내부적으로 <strong>두 가지 표현으로 왕복</strong>시켜야 함</p>
+        <ul>
+          <li><strong>Bundle</strong> — 프로세스 사망 후 백스택 복원</li>
+          <li><strong>URI 문자열</strong> — 딥링크, 목적지 식별</li>
+        </ul>
+        <p>→ 라우트 객체는 *필드 이름·타입 목록을 알 수 있고 양방향 변환이 가능한* 형태여야 함. <code>@Serializable</code>이 그걸 컴파일 타임에 제공</p>
+        <ul>
+          <li>kotlinx.serialization 컴파일러 플러그인이 <code>KSerializer</code>와 그 <strong><code>SerialDescriptor</code></strong>(필드명, 타입, 기본값 존재 여부)를 생성</li>
+          <li>Navigation 2.8은 이 descriptor를 읽어 예전에 손으로 쓰던 것들을 <strong>자동 생성</strong></li>
+        </ul>
+        <table>
+          <thead><tr><th>descriptor에서 읽는 것</th><th>생성되는 것</th></tr></thead>
+          <tbody>
+            <tr><td>클래스 이름</td><td>route 패턴의 베이스</td></tr>
+            <tr><td>기본값 없는 <code>productId: Long</code></td><td>path 인자 <code>/{productId}</code> + <code>NavType.LongType</code></td></tr>
+            <tr><td>기본값 있는 <code>from: String? = null</code></td><td>query 인자 <code>?from={from}</code> + nullable StringType</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li><strong>리플렉션이 아니라 codegen</strong> → R8 축소/난독화에서 keep 룰 없이 안전하고 KMP에서도 동작</li>
+          <li><strong><code>Parcelable</code>로는 안 되는 이유</strong>: 바이너리 전용이라 URI 문자열로 왕복 불가 → 딥링크 URI를 만들 수 없음</li>
+          <li><strong><code>data</code> class/object여야 하는 이유</strong>: <code>popUpTo&lt;T&gt;</code>, <code>hasRoute</code>, 백스택 비교가 <strong>값 동등성</strong>을 사용 → <code>equals</code>/<code>hashCode</code> 필요. 인자가 없으면 <code>data object</code>(싱글턴 + 안정적 동등성)</li>
+          <li>커스텀 타입(enum, 복합 객체)은 <code>typeMap</code>으로 <code>NavType</code>을 직접 매핑</li>
+        </ul>
+        <pre><code>composable&lt;ProductDetail&gt;(typeMap = mapOf(typeOf&lt;ProductKind&gt;() to ProductKindNavType))</code></pre>
+
+        <h2>7. 딥링크</h2>
+
+        <h3>7-1 예전 — Activity에서 수동 처리</h3>
+        <pre><code>&lt;activity android:name=".MainActivity" android:launchMode="singleTop"&gt;
+    &lt;intent-filter android:autoVerify="true"&gt;
+        &lt;action android:name="android.intent.action.VIEW" /&gt;
+        &lt;category android:name="android.intent.category.DEFAULT" /&gt;
+        &lt;category android:name="android.intent.category.BROWSABLE" /&gt;
+        &lt;data android:scheme="https" android:host="shop.example.com" android:pathPrefix="/product" /&gt;
+    &lt;/intent-filter&gt;
+&lt;/activity&gt;</code></pre>
+        <pre><code>class MainActivity : AppCompatActivity() {
+
+    override fun onCreate(s: Bundle?) { super.onCreate(s); handleDeepLink(intent) }
+
+    // 앱이 이미 살아있으면 onCreate가 아니라 여기로 온다 — 두 경로 모두 처리
+    override fun onNewIntent(i: Intent) { super.onNewIntent(i); setIntent(i); handleDeepLink(i) }
+
+    private fun handleDeepLink(intent: Intent) {
+        val uri = intent.data ?: return                       // https://shop.example.com/product/42?from=push
+        val segments = uri.pathSegments
+        if (segments.firstOrNull() != "product") return       // ① 라우팅 분기를 직접
+        val id = segments.getOrNull(1)?.toLongOrNull() ?: return  // ② 파싱/실패 처리를 직접
+        val from = uri.getQueryParameter("from")
+
+        // ③ 합성 백스택을 직접 쌓는다 — Home을 안 넣으면 back에서 앱이 그냥 종료됨
+        supportFragmentManager.beginTransaction().replace(R.id.container, HomeFragment()).commit()
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.container, ProductDetailFragment.newInstance(id, from))
+            .addToBackStack(null).commit()
+    }
+}</code></pre>
+        <p>추가로 직접 해야 했던 일들</p>
+        <ul>
+          <li>목적지가 늘어날 때마다 <code>handleDeepLink</code>의 분기 증식</li>
+          <li>깊은 화면이면 부모 화면들을 순서대로 쌓는 코드(또는 <code>TaskStackBuilder</code> 조립)</li>
+          <li>URI 패턴이 매니페스트(문자열)와 파싱 코드(문자열) 양쪽에 중복</li>
+        </ul>
+
+        <h3>7-2 지금 — 목적지 옆에 선언</h3>
+        <pre><code>composable&lt;ProductDetail&gt;(
+    deepLinks = listOf(navDeepLink&lt;ProductDetail&gt;(basePath = "https://shop.example.com/product")),
+) { /* 인자는 이미 채워져 있다 */ }</code></pre>
+        <ul>
+          <li><code>navDeepLink&lt;T&gt;(basePath)</code>가 <strong>라우트 data class에서 URI 패턴까지 생성</strong> → <code>productId</code>는 path, <code>from</code>은 기본값이 있어 query로 붙어 <code>.../product/{productId}?from={from}</code></li>
+          <li>즉 data class 하나가 <strong>route + 인자 타입 + 딥링크 URI</strong>의 단일 진실 공급원</li>
+        </ul>
+        <p>Navigation이 대신 해주는 것</p>
+        <ul>
+          <li>URI 매칭, 인자 파싱 + 타입 변환 + 디코딩</li>
+          <li><strong>합성 백스택 자동 구성</strong>: 그래프 계층을 따라 start destination부터 목표까지 쌓아줌 → 딥링크로 들어와도 back이 Home으로 동작</li>
+        </ul>
+
+        <svg viewBox="0 0 660 230" width="100%" style="max-width:660px;height:auto;display:block;margin:4px auto" role="img" aria-label="딥링크 백스택 비교: 수동 처리는 Detail만 쌓여 back 시 앱 종료, Navigation은 Home 위에 Detail을 합성">
+          <g font-family="system-ui, sans-serif" font-size="13">
+            <text x="12" y="20" fill="var(--text-dim)" font-size="12">수동 처리 — 목표 화면만 띄움</text>
+            <rect x="12" y="34" width="240" height="40" rx="6" fill="var(--accent-dim)" stroke="var(--accent)"/>
+            <text x="132" y="59" fill="var(--text)" text-anchor="middle">ProductDetail</text>
+            <text x="132" y="98" fill="var(--text-dim)" font-size="12" text-anchor="middle">↓ 뒤로가기</text>
+            <rect x="12" y="112" width="240" height="40" rx="6" fill="none" stroke="var(--border)" stroke-dasharray="4 3"/>
+            <text x="132" y="137" fill="var(--text-dim)" text-anchor="middle">앱 종료 (스택이 비어있음)</text>
+        
+            <line x1="330" y1="14" x2="330" y2="216" stroke="var(--border)"/>
+        
+            <text x="408" y="20" fill="var(--text-dim)" font-size="12">Navigation — 합성 백스택 자동 구성</text>
+            <rect x="408" y="34" width="240" height="40" rx="6" fill="var(--accent-dim)" stroke="var(--accent)"/>
+            <text x="528" y="59" fill="var(--text)" text-anchor="middle">ProductDetail</text>
+            <rect x="408" y="80" width="240" height="40" rx="6" fill="var(--code-bg)" stroke="var(--border)"/>
+            <text x="528" y="105" fill="var(--text)" text-anchor="middle">Home (start destination)</text>
+            <text x="528" y="144" fill="var(--text-dim)" font-size="12" text-anchor="middle">↓ 뒤로가기</text>
+            <rect x="408" y="158" width="240" height="40" rx="6" fill="var(--code-bg)" stroke="var(--border)"/>
+            <text x="528" y="183" fill="var(--text)" text-anchor="middle">Home 으로 복귀</text>
+          </g>
+        </svg>
+
+        <p>XML 그래프를 쓰면 매니페스트 중복도 사라짐</p>
+        <pre><code>&lt;!-- nav_graph.xml --&gt;
+&lt;fragment android:id="@+id/productDetailFragment" ...&gt;
+    &lt;argument android:name="productId" app:argType="long" /&gt;
+    &lt;deepLink app:uri="https://shop.example.com/product/{productId}" /&gt;
+&lt;/fragment&gt;</code></pre>
+        <pre><code>&lt;!-- AndroidManifest.xml — 그래프의 모든 deepLink가 빌드 시 intent-filter로 확장된다 --&gt;
+&lt;activity android:name=".MainActivity"&gt;
+    &lt;nav-graph android:value="@navigation/nav_graph" /&gt;
+&lt;/activity&gt;</code></pre>
+
+        <h3>7-3 알림/푸시에서 딥링크로 특정 화면 열기</h3>
+        <p>Compose 전용 그래프에는 <code>&lt;nav-graph&gt;</code>를 쓸 수 없으므로, 명시적 URI Intent를 직접 만든다</p>
+        <pre><code>fun productPendingIntent(context: Context, productId: Long): PendingIntent {
+    val intent = Intent(
+        Intent.ACTION_VIEW,
+        "https://shop.example.com/product/$productId?from=push".toUri(),
+    ).setPackage(context.packageName)          // 다른 앱이 가로채지 못하게 자기 앱으로 고정
+
+    return PendingIntent.getActivity(
+        context, productId.toInt(), intent,
+        PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+    )
+}</code></pre>
+        <ul>
+          <li><code>setPackage</code>로 자기 앱을 명시 → <a class="wikilink" href="#intent">Intent</a>의 암시적 해석을 거치지 않음</li>
+          <li>나머지(파싱·인자 복원·백스택 합성)는 NavHost가 처리</li>
+        </ul>
+
+        <h2>8. 실무 고려사항</h2>
+        <ul>
+          <li><strong>Compose 전용 그래프는 매니페스트를 직접 쓴다</strong>: XML 그래프가 없어 <code>&lt;nav-graph&gt;</code> 확장이 불가 → Activity에 <code>&lt;intent-filter&gt;</code>를 한 번 작성. 최초 인텐트는 NavController가 그래프 설정 시 자동 처리 → <a class="wikilink" href="#android-manifest">AndroidManifest</a> 참고</li>
+          <li><strong><code>onNewIntent</code>는 수동</strong>: <code>launchMode="singleTop"</code>으로 앱이 살아있는 상태에서 들어온 딥링크는 직접 넘겨줘야 함</li>
+        </ul>
+        <pre><code>override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    navController.handleDeepLink(intent)
+}</code></pre>
+        <ul>
+          <li><strong>App Links 검증은 별개</strong>: <code>android:autoVerify="true"</code> + 서버의 <code>/.well-known/assetlinks.json</code> 배포가 되어야 브라우저가 앱으로 직행. 안 하면 선택 다이얼로그가 뜸</li>
+          <li><strong>인자에 큰 객체를 담지 말 것</strong>: URI/Bundle을 거치므로 ID만 넘기고 데이터는 저장소에서 다시 읽음</li>
+          <li><strong>Fragment는 파괴/재생성된다</strong>: back으로 돌아오면 Fragment 인스턴스와 View가 새로 만들어짐 → 상태는 ViewModel이나 <code>SavedStateHandle</code>에 둬야 함</li>
+          <li><strong>인증 게이트는 앱 로직</strong>: "로그인 필요한 딥링크" 분기는 라이브러리가 해주지 않음. 목적지에서 미인증을 감지해 <code>navigate(Login)</code> 후 원래 목적지로 돌려보내는 흐름을 직접 설계</li>
+          <li><strong>XML + Fragment 스택이면</strong>: <code>findNavController()</code>로 NavController를 얻고 Safe Args가 생성한 <code>XFragmentDirections</code>/<code>XFragmentArgs</code>를 사용. type-safe route는 Compose 쪽 기능</li>
+          <li><strong>Navigation 3</strong>: Compose 전용 차세대 버전. 백스택을 라이브러리가 감추지 않고 개발자가 <code>List&lt;Key&gt;</code>로 직접 소유하는 모델이라 적응형(멀티 페인) 레이아웃에 유리. 성숙도가 낮으므로 채택은 안정화 상태 확인 후 판단</li>
+        </ul>
+
+        <h2>9. 관련 문서</h2>
+        <ul>
+          <li><a class="wikilink" href="#task">Task</a> — Activity 단위 BackStack. Navigation의 백스택은 그 안의 한 Activity 내부에서 목적지 단위로 다시 쌓이는 구조</li>
+          <li><a class="wikilink" href="#activity-launch-mode">Activity LaunchMode</a> — <code>launchSingleTop</code>/<code>popUpTo</code>가 Fragment·Composable 레벨에서 푸는 문제의 Activity 버전</li>
+          <li><a class="wikilink" href="#intent">Intent</a> — 딥링크가 <code>ACTION_VIEW</code> Intent로 도착하고, 알림 PendingIntent로 특정 목적지를 여는 경로</li>
+          <li><a class="wikilink" href="#android-manifest">AndroidManifest</a> — 딥링크 <code>&lt;intent-filter&gt;</code> 등록과 <code>&lt;nav-graph&gt;</code> 확장이 일어나는 지점</li>
+          <li><a class="wikilink" href="#bundle">Bundle</a> — 라우트 인자와 <code>SavedStateHandle</code>이 저장/복원되는 실제 자료구조</li>
+          <li><a class="wikilink" href="#hilt">Hilt</a> — <code>hiltViewModel(parent)</code>로 중첩 그래프 스코프 ViewModel을 주입하는 조합</li>
         </ul>
       </div>
     </section>
@@ -1979,19 +2448,11 @@ startActivity(Intent(this, DetailActivity::class.java))</code></pre>
 
         <h2>핵심 개념</h2>
         <ul>
-          <li><strong>동작 원리</strong>: 클라이언트 요청 → 서버가 정해진
-          포트에서 대기(listen) → 요청 파싱 → 경로에 맞는 처리 로직 실행 →
-          응답 생성 → 클라이언트로 전송</li>
-          <li><strong>상시 실행</strong>: 요청이 언제 올지 모름 → 프로세스가
-          항상 켜져 있어야 함 → 죽으면 PM2, systemd 등으로 자동 재시작</li>
-          <li><strong>포트와 권한</strong>: 80(HTTP)/443(HTTPS)은 관리자 권한
-          필요 → 앱은 보통 3000, 8000 같은 임의 포트에서 대기 → 앞단 리버스
-          프록시(예: Nginx)가 80/443을 받아 내부 포트로 전달</li>
-          <li><strong>(실무) 프레임워크 활용</strong>: Express, FastAPI 등이
-          소켓 처리·파싱·라우팅 같은 저수준 작업을 대신 처리 → 개발자는
-          경로별 핸들러 로직만 작성</li>
-          <li><strong>(실무) 배포에 필요한 요소</strong>: 아래 순서로 준비
-          (실행 순서가 있는 절차라 번호로 표기)
+          <li><strong>동작 원리</strong>: 클라이언트 요청 → 서버가 정해진 포트에서 대기(listen) → 요청 파싱 → 경로에 맞는 처리 로직 실행 → 응답 생성 → 클라이언트로 전송</li>
+          <li><strong>상시 실행</strong>: 요청이 언제 올지 모름 → 프로세스가 항상 켜져 있어야 함 → 죽으면 PM2, systemd 등으로 자동 재시작</li>
+          <li><strong>포트와 권한</strong>: 80(HTTP)/443(HTTPS)은 관리자 권한 필요 → 앱은 보통 3000, 8000 같은 임의 포트에서 대기 → 앞단 리버스 프록시(예: Nginx)가 80/443을 받아 내부 포트로 전달</li>
+          <li><strong>(실무) 프레임워크 활용</strong>: Express, FastAPI 등이 소켓 처리·파싱·라우팅 같은 저수준 작업을 대신 처리 → 개발자는 경로별 핸들러 로직만 작성</li>
+          <li><strong>(실무) 배포에 필요한 요소</strong>: 아래 순서로 준비 (실행 순서가 있는 절차라 번호로 표기)
             <ol>
               <li>VM/클라우드 서버 한 대</li>
               <li>언어 런타임 설치 (Node.js, Python 등)</li>
@@ -2001,8 +2462,7 @@ startActivity(Intent(this, DetailActivity::class.java))</code></pre>
               <li>HTTPS 인증서 (Let's Encrypt 등)</li>
             </ol>
           </li>
-          <li><strong>(실무) PaaS라는 대안</strong>: Vercel, Netlify 등이 위
-          배포 단계를 전부 서비스화 → 빌드 결과물만 올리면 끝</li>
+          <li><strong>(실무) PaaS라는 대안</strong>: Vercel, Netlify 등이 위 배포 단계를 전부 서비스화 → 빌드 결과물만 올리면 끝</li>
         </ul>
 
         <h2>예시</h2>
@@ -2014,8 +2474,7 @@ app.get('/', (req, res) =&gt; {
 });
 
 app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
-        <p>→ 실제 서비스에선 이 포트 앞에 리버스 프록시(Nginx 등)가 80/443
-        요청을 프록시</p>
+        <p>→ 실제 서비스에선 이 포트 앞에 리버스 프록시(Nginx 등)가 80/443 요청을 프록시</p>
 
         <h2>관련 문서</h2>
       </div>
@@ -2031,10 +2490,10 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     { slug: "activity-launch-mode", title: "Activity LaunchMode", group: "dev", category: "android", subcategory: "app-entry-points", tags: ["android","activity","launchmode","task-stack"], updated: "2026-09-05" },
     { slug: "task", title: "Task", group: "dev", category: "android", subcategory: "app-entry-points", tags: ["android","task","back-stack","activity"], updated: "2026-09-12" },
     { slug: "bundle", title: "Bundle", group: "dev", category: "android", subcategory: "app-entry-points", tags: ["android","bundle","intent","activity","persistablebundle","savedinstancestate"], updated: "2026-09-12" },
-    { slug: "jetpack-lifecycle", title: "Jetpack Lifecycle", group: "dev", category: "android", subcategory: "app-entry-points", tags: ["android","jetpack","lifecycle","lifecycleowner","lifecycleobserver","lifecycleregistry"], updated: "2026-09-14" },
+    { slug: "jetpack-lifecycle", title: "Jetpack Lifecycle", group: "dev", category: "android", subcategory: "app-entry-points", tags: ["android","jetpack","lifecycle","lifecycleowner","lifecycleobserver","lifecycleregistry"], updated: "2026-09-20" },
     { slug: "android-runtime", title: "Android Runtime", group: "dev", category: "android", subcategory: "platform-architecture", tags: ["android","runtime","art","dalvik","jit","aot"], updated: "2026-09-12" },
     { slug: "annotation-processor", title: "Annotation Processor", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","kotlin","java","kapt","ksp","build","codegen"], updated: "2026-09-12" },
-    { slug: "data-binding", title: "Data Binding", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","databinding","viewbinding","bindingadapter","xml","jetpack"], updated: "2026-09-12" },
+    { slug: "data-binding", title: "Data Binding", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","databinding","viewbinding","bindingadapter","xml","jetpack"], updated: "2026-09-20" },
     { slug: "hilt", title: "Hilt", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","di","dependency-injection","hilt","dagger","kotlin"], updated: "2026-09-19" },
     { slug: "live-data", title: "LiveData", group: "dev", category: "android", subcategory: "app-startup", tags: ["android","livedata","mutablelivedata","lifecycle","observer","postvalue"], updated: "2026-09-20" },
     { slug: "anr", title: "ANR (Application Not Responding)", group: "dev", category: "android", subcategory: "code-analysis-test", tags: ["android","anr","performance","debugging","main-thread"], updated: "2026-09-12" },
@@ -2043,7 +2502,8 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     { slug: "saf", title: "SAF (Storage Access Framework)", group: "dev", category: "android", subcategory: "app-components", tags: ["android","saf","storage-access-framework","documentsprovider","content-uri","scoped-storage"], updated: "2026-09-13" },
     { slug: "intent", title: "Intent", group: "dev", category: "android", subcategory: "app-components", tags: ["android","intent","intent-filter","activity","broadcast","pendingintent","packagemanager"], updated: "2026-09-20" },
     { slug: "android-manifest", title: "AndroidManifest", group: "dev", category: "android", subcategory: "app-manifest", tags: ["android","manifest","packagemanager","exported","intent-resolution","applicationid"], updated: "2026-09-21" },
-    { slug: "web-server", title: "웹서버", group: "dev", groupLabel: "dev", category: "backend", categoryLabel: "backend", tags: ["web-server","http","deployment","backend"], updated: "2026-08-31" }
+    { slug: "jetpack-navigation", title: "Jetpack Navigation", group: "dev", category: "android", subcategory: "app-navigation", tags: ["android","jetpack","navigation","navcontroller","navhost","navgraph","deeplink","type-safe-route","compose"], updated: "2026-09-27" },
+    { slug: "web-server", title: "웹서버", group: "dev", category: "backend", tags: ["web-server","http","deployment","backend"], updated: "2026-08-31" }
   ];
 
   var GROUP_ORDER = ["cs", "dev"];
@@ -2065,7 +2525,8 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     "code-analysis-test": "Code Analysis & Test",
     "local-storage": "Local Storage",
     "app-components": "App Components",
-    "app-manifest": "App Manifest"
+    "app-manifest": "App Manifest",
+    "app-navigation": "App Navigation"
   };
   // 카테고리 노드를 클릭했을 때 노트 대신 보여줄 랜딩 섹션(예: 로드맵 이미지). key는 "group:category".
   var CATEGORY_LANDING = { "dev:android": "cat-android" };
