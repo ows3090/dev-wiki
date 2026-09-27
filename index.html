@@ -2300,7 +2300,14 @@ navController.popBackStack&lt;Home&gt;(inclusive = false)                    // 
         </table>
         <ul>
           <li><strong>리플렉션이 아니라 codegen</strong> → R8 축소/난독화에서 keep 룰 없이 안전하고 KMP에서도 동작</li>
-          <li><strong><code>Parcelable</code>로는 안 되는 이유</strong>: 바이너리 전용이라 URI 문자열로 왕복 불가 → 딥링크 URI를 만들 수 없음</li>
+          <li><strong><code>Parcelable</code>로는 안 되는 이유</strong>: 목적지를 문자열(route 패턴 / 딥링크 URI)로 표현할 수 없음
+            <ul>
+              <li><strong>이름 없는 바이트 뭉치</strong>: <code>writeToParcel</code>은 쓴 순서대로 값만 나열 → 어디에도 <code>productId</code>라는 필드명이 남지 않음 → <code>product/42</code>를 만들 수도, 거꾸로 파싱할 수도 없음</li>
+              <li><strong>스키마 미노출</strong>: descriptor에 해당하는 게 없어 route 패턴/<code>NavType</code> 자동 생성 불가 (XML 시절 <code>app:argType</code>을 손으로 적던 이유)</li>
+              <li><strong>포맷 호환 미보장</strong>: Parcel은 범용 직렬화 수단이 아님 → 앱 밖에서 오래 사는 딥링크 URI에 부적합</li>
+              <li><code>typeMap</code>에 커스텀 <code>NavType</code>을 등록하면 인자 하나로 전달은 가능하나, 결국 <code>serializeAsValue</code>/<code>parseValue</code>로 문자열 표현을 직접 제공해야 하고 딥링크 URI에는 안 담김</li>
+            </ul>
+          </li>
           <li><strong><code>data</code> class/object여야 하는 이유</strong>: <code>popUpTo&lt;T&gt;</code>, <code>hasRoute</code>, 백스택 비교가 <strong>값 동등성</strong>을 사용 → <code>equals</code>/<code>hashCode</code> 필요. 인자가 없으면 <code>data object</code>(싱글턴 + 안정적 동등성)</li>
           <li>커스텀 타입(enum, 복합 객체)은 <code>typeMap</code>으로 <code>NavType</code>을 직접 매핑</li>
         </ul>
