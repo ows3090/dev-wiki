@@ -695,7 +695,7 @@ override fun onCreate(savedInstanceState: Bundle?) {
           <li><a class="wikilink" href="#intent">Intent</a> — extras에 Bundle 구조를 그대로 실어 컴포넌트 간 데이터를 전달</li>
           <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 라우트 인자와 <code>SavedStateHandle</code>이 이 구조로 저장/복원됨</li>
           <li><a class="wikilink" href="#activity-lifecycle">Activity Lifecycle</a> — 이 Bundle이 저장/복원되는 시점 (<code>onSaveInstanceState</code>, <code>onCreate</code>)을 정하는 상태 전이 모델</li>
-          <li><a class="wikilink" href="#parcelable">Parcelable</a> — Bundle 자신이 구현한 규약이자, Bundle에 커스텀 객체를 담을 때 필요한 직렬화 방식</li>
+          <li><a class="wikilink" href="#parcel-parcelable-serializable">Parcel, Parcelable, Serializable</a> — Bundle 자신이 구현한 규약이자, Bundle에 커스텀 객체를 담을 때 필요한 직렬화 방식</li>
           <li><a class="wikilink" href="#binder">Binder</a> — Bundle이 Parcel로 직렬화돼 건너가는 IPC 메커니즘, <code>TransactionTooLargeException</code>의 1MB 한계가 나오는 곳</li>
         </ul>
       </div>
@@ -1148,7 +1148,7 @@ A → B 로 화면 이동 (구간이 겹친다)
           <li>프로세스 경계를 넘어 <strong>메서드를 호출하게 해주는</strong> 커널 드라이버 기반 RPC(Remote Procedure Call) 프레임워크</li>
           <li>저장소가 <strong>아님</strong> — 데이터를 어딘가에 놓아두는 게 아니라 요청 → 실행 → 응답으로 끝나는 통신 메커니즘</li>
           <li>안드로이드 IPC의 사실상 유일한 통로 — 앱 ↔ <code>system_server</code>, 앱 ↔ 앱, 앱 ↔ HAL 전부 이 위에서 동작</li>
-          <li>비유 그대로 — Binder가 배송 시스템, <a class="wikilink" href="#parcelable">Parcelable</a>의 <code>Parcel</code>이 실려가는 소포</li>
+          <li>비유 그대로 — Binder가 배송 시스템, <a class="wikilink" href="#parcel-parcelable-serializable">Parcelable</a>의 <code>Parcel</code>이 실려가는 소포</li>
         </ul>
 
         <h2>2. 목적 (AS-IS / TO-BE)</h2>
@@ -1262,7 +1262,7 @@ override fun onServiceConnected(name: ComponentName, service: IBinder) {
 
         <h2>7. 관련 문서</h2>
         <ul>
-          <li><a class="wikilink" href="#parcelable">Parcelable</a> — Binder에 실어보낼 객체를 평탄화하는 규약, <code>Parcel</code>이 그 전송 포맷</li>
+          <li><a class="wikilink" href="#parcel-parcelable-serializable">Parcel, Parcelable, Serializable</a> — Binder에 실어보낼 객체를 평탄화하는 규약, <code>Parcel</code>이 그 전송 포맷</li>
           <li><a class="wikilink" href="#bundle">Bundle</a> — Parcel로 직렬화돼 Binder를 타고 <code>system_server</code>에 보관되는 상태 컨테이너</li>
           <li><a class="wikilink" href="#intent">Intent</a> — 컴포넌트 실행 요청이 Binder를 거쳐 <code>system_server</code>로 전달됨</li>
           <li><a class="wikilink" href="#task">Task</a> — BackStack을 들고 있는 <code>system_server</code>와의 통신이 전부 Binder</li>
@@ -1978,7 +1978,7 @@ coroutineScope { repeat(100) { launch { increment(dataStore) } } }</code></pre>
 
         <h2>7. 관련 문서</h2>
         <ul>
-          <li><a class="wikilink" href="#parcelable">Parcelable</a> — Proto DataStore가 쓰는 <code>kotlinx.serialization</code>과 안드로이드 IPC용 <code>Parcelable</code>의 역할 차이</li>
+          <li><a class="wikilink" href="#parcel-parcelable-serializable">Parcel, Parcelable, Serializable</a> — Proto DataStore가 쓰는 <code>kotlinx.serialization</code>과 안드로이드 IPC용 <code>Parcelable</code>의 역할 차이</li>
         </ul>
       </div>
     </section>
@@ -2230,18 +2230,18 @@ startActivity(intent) // 시스템이 설치된 브라우저 중 골라서(혹�
           <li><a class="wikilink" href="#bundle">Bundle</a> — Intent의 extras에 담기는 데이터 구조</li>
           <li><a class="wikilink" href="#file-uri-vs-content-uri">File URI vs Content URI</a> — Intent에 파일을 실어 보낼 때 file URI 대신 content URI + 권한 플래그를 쓰는 이유</li>
           <li><a class="wikilink" href="#jetpack-navigation">Jetpack Navigation</a> — 딥링크가 <code>ACTION_VIEW</code> Intent로 도착하고, 알림 PendingIntent로 특정 목적지를 여는 경로</li>
-          <li><a class="wikilink" href="#parcelable">Parcelable</a> — extras에 커스텀 객체를 실을 때 필요한 직렬화 규약</li>
+          <li><a class="wikilink" href="#parcel-parcelable-serializable">Parcel, Parcelable, Serializable</a> — extras에 커스텀 객체를 실을 때 필요한 직렬화 규약</li>
           <li><a class="wikilink" href="#binder">Binder</a> — 이 Intent가 <code>system_server</code>로 전달될 때 타는 IPC 경로</li>
         </ul>
       </div>
     </section>
 
-    <section id="parcelable" class="note-section">
+    <section id="parcel-parcelable-serializable" class="note-section">
       <div class="note-header">
-        <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">Parcelable</span></div>
-        <h1>Parcelable</h1>
+        <div class="note-breadcrumb">개발<span class="sep">/</span>안드로이드<span class="sep">/</span><span class="current">Parcel, Parcelable, Serializable</span></div>
+        <h1>Parcel, Parcelable, Serializable</h1>
         <div class="note-meta">
-          <span>수정일 2026-09-27</span>
+          <span>수정일 2026-09-28</span>
           <span class="read-time"></span>
           <span><span class="tag">android</span><span class="tag">parcelable</span><span class="tag">parcel</span><span class="tag">serializable</span><span class="tag">ipc</span><span class="tag">binder</span><span class="tag">kotlinx-serialization</span><span class="tag">parcelize</span></span>
         </div>
@@ -2981,7 +2981,7 @@ navController.popBackStack&lt;Home&gt;(inclusive = false)                    // 
           <li><a class="wikilink" href="#android-manifest">AndroidManifest</a> — 딥링크 <code>&lt;intent-filter&gt;</code> 등록과 <code>&lt;nav-graph&gt;</code> 확장이 일어나는 지점</li>
           <li><a class="wikilink" href="#bundle">Bundle</a> — 라우트 인자와 <code>SavedStateHandle</code>이 저장/복원되는 실제 자료구조</li>
           <li><a class="wikilink" href="#hilt">Hilt</a> — <code>hiltViewModel(parent)</code>로 중첩 그래프 스코프 ViewModel을 주입하는 조합</li>
-          <li><a class="wikilink" href="#parcelable">Parcelable</a> — 라우트가 <code>Parcelable</code> 대신 <code>@Serializable</code>을 쓰는 이유와 두 직렬화 방식의 역할 구분</li>
+          <li><a class="wikilink" href="#parcel-parcelable-serializable">Parcel, Parcelable, Serializable</a> — 라우트가 <code>Parcelable</code> 대신 <code>@Serializable</code>을 쓰는 이유와 두 직렬화 방식의 역할 구분</li>
         </ul>
       </div>
     </section>
@@ -3060,7 +3060,7 @@ app.listen(3000); // 80/443이 아니라 임의 포트에서 대기</code></pre>
     { slug: "file-uri-vs-content-uri", title: "File URI vs Content URI", group: "dev", category: "android", subcategory: "app-components", tags: ["android","uri","fileprovider","contentprovider","intent","scoped-storage"], updated: "2026-09-13" },
     { slug: "saf", title: "SAF (Storage Access Framework)", group: "dev", category: "android", subcategory: "app-components", tags: ["android","saf","storage-access-framework","documentsprovider","content-uri","scoped-storage"], updated: "2026-09-13" },
     { slug: "intent", title: "Intent", group: "dev", category: "android", subcategory: "app-components", tags: ["android","intent","intent-filter","activity","broadcast","pendingintent","packagemanager"], updated: "2026-09-20" },
-    { slug: "parcelable", title: "Parcelable", group: "dev", category: "android", subcategory: "app-components", tags: ["android","parcelable","parcel","serializable","ipc","binder","kotlinx-serialization","parcelize"], updated: "2026-09-27" },
+    { slug: "parcel-parcelable-serializable", title: "Parcel, Parcelable, Serializable", group: "dev", category: "android", subcategory: "app-components", tags: ["android","parcelable","parcel","serializable","ipc","binder","kotlinx-serialization","parcelize"], updated: "2026-09-28" },
     { slug: "android-manifest", title: "AndroidManifest", group: "dev", category: "android", subcategory: "app-manifest", tags: ["android","manifest","packagemanager","exported","intent-resolution","applicationid"], updated: "2026-09-21" },
     { slug: "jetpack-navigation", title: "Jetpack Navigation", group: "dev", category: "android", subcategory: "app-navigation", tags: ["android","jetpack","navigation","navcontroller","navhost","navgraph","deeplink","type-safe-route","compose"], updated: "2026-09-27" },
     { slug: "web-server", title: "웹서버", group: "dev", category: "backend", tags: ["web-server","http","deployment","backend"], updated: "2026-08-31" }
